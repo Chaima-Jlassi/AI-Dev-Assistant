@@ -9,11 +9,10 @@ One persistent Ollama session handles all four features without reconnecting.
 ## Features
 
 | # | Feature | Output folder |
-|---|---------|--------------|
-| 1 | 🖼️ Generate UML diagrams from natural language | `outputs/diagrams/` |
-| 2 | 📄 Generate README from source code | `outputs/readme/` |
-| 3 | 🧪 Generate test cases (framework auto-detected by LLM) | `outputs/tests/` |
-| 4 | 💡 Explain code in plain English | `outputs/explanations/` |
+| 1 | Generate UML diagrams from natural language | `outputs/diagrams/` |
+| 2 | Generate README from source code | `outputs/readme/` |
+| 3 | Generate test cases (framework auto-detected by LLM) | `outputs/tests/` |
+| 4 | Explain code in plain English | `outputs/explanations/` |
 
 ### Auto-detected test frameworks
 
@@ -77,19 +76,10 @@ pcd_foc/
 ---
 
 ## Installation
-
-```bash
-# 1. Clone / copy the project
-cd pcd_foc
-
-# 2. Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# 3. Install dependencies
+Install dependencies
 pip install -r requirements.txt
 
-# 4. Start Ollama in another terminal
+# . Start Ollama in another terminal
 ollama serve
 ollama pull mistral          # or any other model
 ```
@@ -110,25 +100,7 @@ The CLI will:
 
 ---
 
-## Configuration
 
-All settings can be overridden with environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OLLAMA_URL` | `http://localhost:11434/api/generate` | Ollama endpoint |
-| `OLLAMA_MODEL` | `mistral` | Model to use |
-| `OLLAMA_TIMEOUT` | `180` | Request timeout (seconds) |
-| `OLLAMA_TEMPERATURE` | `0.3` | Generation temperature |
-| `PLANTUML_URL` | plantuml.com | PlantUML render server |
-| `PLANTUML_LOCAL` | `false` | Use local jar instead |
-| `RAG_TOP_K` | `2` | Examples retrieved per query |
-| `OUTPUT_README_DIR` | `./outputs/readme` | README output folder |
-| `OUTPUT_TESTS_DIR` | `./outputs/tests` | Tests output folder |
-| `OUTPUT_EXPLANATIONS_DIR` | `./outputs/explanations` | Explanations output folder |
-| `DEBUG` | `false` | Print full tracebacks |
-
----
 
 ## Architecture
 
