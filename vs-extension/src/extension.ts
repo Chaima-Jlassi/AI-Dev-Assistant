@@ -1,36 +1,47 @@
 import * as vscode from 'vscode';
-import { runAgent } from './agent';
+import { AiDevAssistantProvider } from './provider';
 
 export function activate(context: vscode.ExtensionContext) {
-  const disposable = vscode.commands.registerCommand('ai-agent-extension.runAgent', async () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showErrorMessage('Open a file first!');
-      return;
-    }
+  const provider = new AiDevAssistantProvider(context.extensionUri, context);
 
-    const text = editor.document.getText(editor.selection);
-    if (!text) {
-      vscode.window.showWarningMessage('Please highlight some code to explain.');
-      return;
-    }
+ 
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      AiDevAssistantProvider.viewType,
+      provider,
+      { webviewOptions: { retainContextWhenHidden: true } }
+    )
+  );
 
-    // Show a loading progress bar
-    await vscode.window.withProgress({
-      location: vscode.ProgressLocation.Notification,
-      title: "AI Mentor is thinking...",
-      cancellable: false
-    }, async () => {
-      const result = await runAgent(text);
+ 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('aiDevAssistant.openPanel', () => {
+      vscode.commands.executeCommand('aiDevAssistant.panel.focus');
+    })
+  );
 
-      // Create and show a beautiful Markdown document
-      const doc = await vscode.workspace.openTextDocument({
-        content: `# AI Mentor Analysis\n\n**Decision:** ${result.decision}\n\n---\n\n${result.response}`,
-        language: 'markdown'
-      });
-      await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside);
-    });
-  });
+  
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) provider.notifyEditorChange(editor);
+    })
+  );
 
-  context.subscriptions.push(disposable);
+  
+  context.subscriptions.push(
+    vscode.window.onDidChangeTextEditorSelection((event) => {
+      if (event.textEditor && !event.textEditor.selection.isEmpty) {
+        provider.notifySelectionChange(event.textEditor);
+      }
+    })
+  );
+
+  
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      provider.notifyFileSaved(doc);
+    })
+  );
 }
+
+export function deactivate() {}

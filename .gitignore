@@ -17,7 +17,11 @@ CMakeUserPresets.json
 # -----------------------------
 # Node.js
 # -----------------------------
-node_modules/
+node_modules
+.vscode-test/
+*.vsix
+dist/
+out/
 
 # -----------------------------
 # JetBrains / CLion
@@ -26,3 +30,5 @@ node_modules/
 # https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 # Optionally ignore the entire idea folder (uncomment if needed)
 # .idea/
+server/.env
+server/node_modules

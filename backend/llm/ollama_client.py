@@ -1,93 +1,53 @@
-"""
-Persistent Ollama client — one instance lives for the whole session.
-Import `get_client()` anywhere; it returns the same object every time.
-"""
 import requests
-from typing import Optional
-from config import CONFIG
-from logger import logger
-from errors import OllamaError, retry_with_backoff
 
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL = "mistral"
 
-class OllamaClient:
-    """
-    Session-scoped Ollama client.
-    Keeps an open requests.Session for connection re-use across all calls.
-    """
-
-    def __init__(self, url: str = None, model: str = None):
-        self.url = url or CONFIG.ollama.url
-        self.model = model or CONFIG.ollama.model
-        self.timeout = CONFIG.ollama.timeout
-        self._session = requests.Session()           # persistent TCP connection
-        logger.info(f"OllamaClient ready → {self.url} | model={self.model}")
-
-    # ------------------------------------------------------------------
-    # Core call – retried automatically via decorator
-    # ------------------------------------------------------------------
-    @retry_with_backoff(
-        max_retries=CONFIG.ollama.max_retries,
-        backoff_factor=2.0,
-        initial_delay=1.0,
+def call_ollama(prompt: str) -> str:
+    response = requests.post(
+        OLLAMA_URL,
+        json={
+            "model": MODEL,
+            "prompt": prompt,
+            "stream": False
+        }
     )
-    def call(self, prompt: str, temperature: float = None) -> str:
-        """
-        Send *prompt* to Ollama and return the raw text response.
-
-        Args:
-            prompt:      The full prompt string.
-            temperature: Override config temperature for this call only.
-
-        Returns:
-            Model response string.
-
-        Raises:
-            OllamaError: on any network / format problem.
-        """
-        temp = temperature if temperature is not None else CONFIG.ollama.temperature
-        try:
-            logger.info(f"→ Ollama '{self.model}' (temp={temp}) …")
-            resp = self._session.post(
-                self.url,
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "temperature": temp,
-                },
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-            if "response" not in data:
-                raise OllamaError(f"Unexpected Ollama response format: {data}")
-
-            result = data["response"].strip()
-            logger.info(f"← received {len(result)} chars")
-            return result
-
-        except requests.exceptions.ConnectionError as e:
-            raise OllamaError(f"Cannot connect to Ollama at {self.url}") from e
-        except requests.exceptions.Timeout:
-            raise OllamaError(f"Ollama timed out after {self.timeout}s") from None
-        except requests.exceptions.RequestException as e:
-            raise OllamaError(f"Request failed: {e}") from e
-
-    def close(self):
-        self._session.close()
-        logger.info("OllamaClient session closed")
+    # Safety check
+    data = response.json()
+    if "response" not in data:
+        print(" Ollama response invalid:", data)
+        return ""
+    return data["response"].strip()
 
 
-# -----------------------------------------------------------------------
-# Module-level singleton — created once, reused for the whole process
-# -----------------------------------------------------------------------
-_client: Optional[OllamaClient] = None
+def generate_plantuml(user_input: str, context: str) -> str:
+    prompt = f"""
+You are an expert in UML and PlantUML.
 
+Use the context below to generate a correct UML diagram.
 
-def get_client() -> OllamaClient:
-    """Return the session-wide OllamaClient, creating it on first call."""
-    global _client
-    if _client is None:
-        _client = OllamaClient()
-    return _client
+Context:
+{context}
+
+Rules:
+- Only return valid PlantUML code
+- No explanations
+- No extra text or markdown
+- Must start with @startuml
+- Must end with @enduml
+
+User request:
+{user_input}
+"""
+
+    uml_output = call_ollama(prompt)
+
+    # Extract UML if extra text sneaks in
+    start = uml_output.find("@startuml")
+    end = uml_output.find("@enduml") + len("@enduml")
+    if start == -1 or end == -1:
+        print(" Ollama did not return valid UML.")
+        return ""
+    
+    clean_uml = uml_output[start:end].strip()
+    return clean_uml
