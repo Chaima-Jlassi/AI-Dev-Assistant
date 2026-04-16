@@ -1,47 +1,48 @@
 {
-  "name": "ai-agent-extension",
-  "displayName": "AI Agent Extension",
-  "description": "A VS Code extension that analyzes code selections using AI",
+  "name": "ai-dev-assistant",
+  "displayName": "AI Dev Assistant",
+  "description": "Your AI-powered coding assistant",
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.108.1"
+    "vscode": "^1.85.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "main": "./dist/extension.js",
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "ai-agent-extension.runAgent",
-        "title": "AI Agent: Analyze Selection"
+        "command": "aiDevAssistant.openPanel",
+        "title": "Open AI Dev Assistant"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aiDevAssistant",
+          "title": "AI Dev Assistant",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "aiDevAssistant": [
+        {
+          "type": "webview",
+          "id": "aiDevAssistant.panel",
+          "name": "AI Dev Assistant"
+        }
+      ]
+    }
   },
   "scripts": {
-    "compile": "npm run check-types && npm run lint && node esbuild.js",
-    "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
-    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "npm run check-types && npm run lint && node esbuild.js --production",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "check-types": "tsc --noEmit",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
   },
   "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.108.1",
-    "@typescript-eslint/eslint-plugin": "^8.46.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "esbuild": "^0.27.0",
-    "eslint": "^9.39.1",
-    "npm-run-all": "^4.1.5",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.54.0"
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
   }
 }
