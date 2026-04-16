@@ -13,12 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 from config import CONFIG
-from logger import logger
-from errors import OllamaError, PlantUMLError
-from llm.ollama_client import get_client          # singleton — created here, reused everywhere
 
+from llm.ollama_client import get_client         
 
-# ── lazy imports of feature modules (so startup is fast) ─────────────────────
 def _readme():
     from llm.readme_generator import generate_readme
     return generate_readme
@@ -44,7 +41,7 @@ def _renderer():
     return PlantUMLRenderer
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+#helpers
 
 SEPARATOR = "=" * 60
 
@@ -58,12 +55,6 @@ def _banner(text: str):
 
 
 def _read_code_from_user() -> Optional[str]:
-    """
-    Ask the user for code input.
-    They can:
-      • Type / paste lines and finish with a line containing only END
-      • Provide a file path
-    """
     print("\nHow would you like to provide the code?")
     print("  [1] Paste / type code  (finish with a line containing just: END)")
     print("  [2] Provide a file path")
@@ -73,7 +64,7 @@ def _read_code_from_user() -> Optional[str]:
         path_str = input("File path: ").strip()
         p = Path(path_str)
         if not p.exists():
-            print(f"❌  File not found: {p}")
+            print(f"  File not found: {p}")
             return None
         try:
             code = p.read_text(encoding="utf-8")
@@ -102,7 +93,6 @@ def _read_code_from_user() -> Optional[str]:
 
 
 def _slugify(text: str, maxlen: int = 40) -> str:
-    """Turn a free-text string into a safe filename fragment."""
     import re
     s = re.sub(r"[^\w\s-]", "", text.lower())
     s = re.sub(r"[\s_-]+", "_", s).strip("_")
@@ -113,7 +103,7 @@ def _slugify(text: str, maxlen: int = 40) -> str:
 
 def handle_diagram():
     """UML diagram generation (original feature, preserved intact)."""
-    _banner("🖼️  UML Diagram Generator")
+    _banner("  UML Diagram Generator")
 
     user_input = input("Describe the diagram you want:\n> ").strip()
     if not user_input:
@@ -133,17 +123,16 @@ def handle_diagram():
         if not context:
             context = "(no examples found)"
     except Exception as e:
-        logger.warning(f"RAG retrieval failed: {e}")
-        context = "(no examples found)"
+        print(f"  Context retrieval error: {e}")
+        context = "(context retrieval failed)"
 
     print(" Generating PlantUML …")
     try:
         generate_plantuml = _uml()
         uml_blocks = generate_plantuml(user_input, context, count=count)
-    except OllamaError as e:
-        print(f"  LLM error: {e}")
-        print("💡  Make sure Ollama is running: ollama serve")
-        return
+    except:
+        print("  UML generation failed.")
+        uml_blocks = []
 
     if not uml_blocks:
         print("  No valid UML generated.")
@@ -156,14 +145,13 @@ def handle_diagram():
     saved = []
 
     for i, block in enumerate(uml_blocks, start=1):
-        fname = f"diagram_{timestamp}_{i}.png"
+        fname = f"diagram_{i}.png"
         try:
             path = renderer.render(block, fname)
             saved.append(path)
             print(f"    [{i}] {Path(path).absolute()}")
-        except PlantUMLError as e:
-            print(f"    [{i}] Render failed: {e}")
-
+        except:
+            print(f"    [{i}] Failed to render diagram.")
     if saved:
         print(f"\n  {len(saved)} diagram(s) saved in {CONFIG.outputs.diagrams_dir}/")
     else:
@@ -200,10 +188,8 @@ def handle_tests():
         return
 
     slug = _slugify(input("Short name for the test file (no extension) [generated]: ").strip() or "generated")
-    # extension will be decided by the LLM; pass None so the generator appends the right one
-    output_name = None  # auto-determined inside generate_tests based on detected framework
-
-    # But we still want a sensible prefix
+   
+    output_name = None  
     import re
     from llm.test_generator import _detect_framework
     print("\n Detecting language and framework …")
@@ -265,19 +251,16 @@ _HANDLERS = {
 
 def main():
     print("\n" + SEPARATOR)
-    print("  Welcome to PCD-FOC — Your AI Dev Assistant")
+    print("  Welcome to Your AI Dev Assistant")
     print(SEPARATOR)
 
-    # Warm up the Ollama connection once — shared for the whole session
+  
     print("\n Connecting to Ollama …")
     try:
-        client = get_client()   # creates the singleton
+        client = get_client()  
         # lightweight ping
         client.call("Say OK", temperature=0.0)
-        print("✅  Ollama connected and ready\n")
-    except OllamaError as e:
-        print(f"   Could not reach Ollama: {e}")
-        print("    Continuing anyway — make sure 'ollama serve' is running.\n")
+        print("  Ollama connected and ready\n")
     except Exception as e:
         print(f"   Unexpected startup error: {e}\n")
 
@@ -298,8 +281,6 @@ def main():
             handler()
         except KeyboardInterrupt:
             print("\n\n   Interrupted. Returning to menu …")
-        except Exception as e:
-            logger.error(f"Unhandled error in handler: {e}")
             if CONFIG.debug:
                 import traceback; traceback.print_exc()
             print(f"  Something went wrong: {e}")

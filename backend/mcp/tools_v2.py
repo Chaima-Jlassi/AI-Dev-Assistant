@@ -1,4 +1,4 @@
-# Enhanced PlantUML rendering with better error handling and flexibility
+
 import os
 import subprocess
 from pathlib import Path
@@ -12,7 +12,7 @@ from errors import PlantUMLError, validate_uml_syntax
 
 
 class PlantUMLRenderer:
-    """PlantUML rendering with both online and offline support"""
+    
     
     def __init__(self, 
                  server_url: str = None,
@@ -29,15 +29,6 @@ class PlantUMLRenderer:
         logger.info(f"PlantUMLRenderer initialized (use_local={self.use_local})")
     
     def _render_online(self, uml_code: str) -> Optional[bytes]:
-        """
-        Render using online PlantUML server
-        
-        Args:
-            uml_code: PlantUML code
-            
-        Returns:
-            PNG image bytes or None if failed
-        """
         try:
             logger.info(f"Using online server: {self.server_url}")
             server = PlantUML(url=self.server_url)
@@ -107,19 +98,6 @@ class PlantUMLRenderer:
             return None
     
     def render(self, uml_code: str, output_file: str = None) -> Optional[str]:
-        """
-        Render PlantUML diagram to PNG
-        
-        Args:
-            uml_code: PlantUML code to render
-            output_file: Output file path (if None, auto-generated)
-            
-        Returns:
-            Path to generated PNG file or None if failed
-            
-        Raises:
-            PlantUMLError: If UML syntax is invalid
-        """
         # Validate UML
         if not validate_uml_syntax(uml_code):
             raise PlantUMLError("Invalid PlantUML syntax")

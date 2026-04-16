@@ -1,6 +1,7 @@
 """PlantUML generator — moved here from ollama_client_v2 for cleaner separation."""
 from typing import List, Optional
-
+from logger import logger
+from errors import OllamaError, extract_uml_codes
 from llm.ollama_client import get_client
 
 
@@ -47,33 +48,6 @@ Generate exactly {count} PlantUML diagram(s).
 """
 
 
-def extract_uml_codes(response: str) -> List[str]:
-    """
-    Extract valid PlantUML code blocks from the response.
-
-    Returns:
-        List of extracted UML code strings (between @startuml and @enduml).
-    """
-    blocks = []
-    lines = response.split('\n')
-    current_block = []
-    in_block = False
-
-    for line in lines:
-        if '@startuml' in line:
-            in_block = True
-            current_block = [line]
-        elif '@enduml' in line:
-            current_block.append(line)
-            blocks.append('\n'.join(current_block))
-            in_block = False
-            current_block = []
-        elif in_block:
-            current_block.append(line)
-
-    return blocks
-
-
 def generate_plantuml(
     user_input: str,
     context: str,
@@ -93,16 +67,17 @@ def generate_plantuml(
         user_input=user_input,
         count=count,
     )
+    logger.info(f"Generating {count} PlantUML diagram(s) …")
     try:
         response = client.call(prompt)
         blocks = extract_uml_codes(response)
         if not blocks:
-            print("  No valid UML blocks extracted from response")
+            logger.error("No valid UML blocks extracted from response")
             return None
         if len(blocks) < count:
-            print(f"  Requested {count}, got {len(blocks)} valid block(s)")
-        print(f"  Extracted {len(blocks)} UML block(s)")
+            logger.warning(f"Requested {count}, got {len(blocks)} valid block(s)")
+        logger.info(f"Extracted {len(blocks)} UML block(s)")
         return blocks
-    except:
-        print("  UML generation failed.")
+    except OllamaError as e:
+        logger.error(f"UML generation failed: {e}")
         raise

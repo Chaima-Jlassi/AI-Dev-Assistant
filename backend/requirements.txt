@@ -9,5 +9,5 @@ numpy>=1.24.0
 # PlantUML rendering
 plantuml>=0.3.0
 
-# MCP (optional – only needed for server.py)
+# MCP 
 mcp>=0.1.0
