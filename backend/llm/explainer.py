@@ -24,12 +24,12 @@ Walk through the execution flow from entry point to output.
 
 ## Design Patterns & Decisions
 Mention any notable patterns (e.g. singleton, decorator, retry logic, RAG pipeline, etc.).
-
+## Complexity
+Discuss time and space complexity, and any potential bottlenecks.
 ## Potential Issues / Improvements
 List any bugs, edge-cases, or areas for improvement you notice.
+Give a score to it out of 10 for code quality, maintainability, and clarity, and explain your reasoning.
 
-## Glossary
-Define any domain-specific or technical terms used.
 
 RULES:
 - Use plain English; avoid jargon where possible.
