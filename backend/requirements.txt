@@ -1,0 +1,13 @@
+# Core LLM & HTTP
+requests>=2.31.0
+
+# RAG / Embeddings
+sentence-transformers>=2.2.2
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+
+# PlantUML rendering
+plantuml>=0.3.0
+
+# MCP (optional – only needed for server.py)
+mcp>=0.1.0
