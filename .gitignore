@@ -29,6 +29,8 @@ out/
 # -----------------------------
 .vscode/
 **/.vscode/
+**/__pycache__/
+**/.dockerignore
 .venv/
 **/.venv/
 venv/
