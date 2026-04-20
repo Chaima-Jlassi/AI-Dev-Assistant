@@ -5,21 +5,25 @@ import { LayoutDashboard, FileText, MessageSquare, ArrowRight, Boxes, GitBranch,
 
 const features = [
   {
+    slug: "architecture-design",
     icon: LayoutDashboard,
     title: "Architecture Design",
     description: "Get optimal architecture recommendations — MVC, Microservices, Clean Architecture — tailored to your project's needs.",
   },
   {
+    slug: "uml-diagrams",
     icon: Boxes,
     title: "UML Diagrams",
     description: "Auto-generate class, sequence, use-case, activity, and component diagrams.",
   },
   {
+    slug: "readme-docs",
     icon: FileText,
     title: "README & Docs",
     description: "Generate professional README files, code descriptions, and inline documentation in seconds.",
   },
   {
+    slug: "project-structure",
     icon: GitBranch,
     title: "Project Structure",
     description: "Receive directory layout suggestions, module organisation, and dependency-management best practices.",
@@ -54,10 +58,10 @@ const Index = () => {
               </Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <a href="#features" className="flex items-center gap-2">
+              <Link to="/learn-more" className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5" />
                 Learn More
-              </a>
+              </Link>
             </Button>
           </div>
         </div>
@@ -74,17 +78,20 @@ const Index = () => {
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {features.map((f) => (
-              <Card key={f.title} className="bg-card border-border hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary mb-2">
-                    <f.icon className="h-5 w-5" />
-                  </div>
-                  <CardTitle className="text-lg">{f.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{f.description}</p>
-                </CardContent>
-              </Card>
+              <Link key={f.title} to={`/learn-more/${f.slug}`}>
+                <Card className="bg-card border-border hover:shadow-lg transition-shadow h-full">
+                  <CardHeader>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary mb-2">
+                      <f.icon className="h-5 w-5" />
+                    </div>
+                    <CardTitle className="text-lg">{f.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">{f.description}</p>
+                    <p className="text-sm text-primary mt-3">Learn more</p>
+                  </CardContent>
+                </Card>
+              </Link>
             ))}
           </div>
         </div>

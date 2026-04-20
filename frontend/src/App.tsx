@@ -6,6 +6,8 @@ import AgentPage from "./pages/AgentPage";
 import ExtensionPage from "./pages/ExtensionPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import LearnMoreIndexPage from "./pages/LearnMoreIndexPage";
+import LearnMoreDetailPage from "./pages/LearnMoreDetailPage";
 import NotFound from "./pages/NotFound";
 import { isLoggedIn } from "@/lib/auth";
 
@@ -37,6 +39,8 @@ const App = () => (
             <Routes>
               <Route path="/"          element={<Index />} />
               <Route path="/extension" element={<ExtensionPage />} />
+              <Route path="/learn-more" element={<LearnMoreIndexPage />} />
+              <Route path="/learn-more/:topic" element={<LearnMoreDetailPage />} />
               <Route path="/agent"     element={<Protected><AgentPage /></Protected>} />
               <Route path="*"          element={<NotFound />} />
             </Routes>

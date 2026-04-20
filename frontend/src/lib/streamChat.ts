@@ -1,6 +1,6 @@
 export type Msg = { role: "user" | "assistant"; content: string };
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const CHAT_URL = `${import.meta.env.VITE_DB_URL}/functions/v1/chat`;
 
 export async function streamChat({
   messages,
@@ -17,7 +17,7 @@ export async function streamChat({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      Authorization: `Bearer ${import.meta.env.VITE_DB_PUBLISHABLE_KEY}`,
     },
     body: JSON.stringify({ messages }),
   });

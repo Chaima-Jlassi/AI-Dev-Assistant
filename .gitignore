@@ -17,11 +17,24 @@ CMakeUserPresets.json
 # -----------------------------
 # Node.js
 # -----------------------------
-node_modules
+node_modules/
+**/node_modules/
 .vscode-test/
 *.vsix
 dist/
 out/
+
+# -----------------------------
+# Local setup / environments
+# -----------------------------
+.vscode/
+**/.vscode/
+.venv/
+**/.venv/
+venv/
+**/venv/
+env/
+**/env/
 
 # -----------------------------
 # JetBrains / CLion
@@ -32,3 +45,9 @@ out/
 # .idea/
 server/.env
 server/node_modules
+.venv
+/backend/.vscode/
+/backend/node_modules
+
+
+

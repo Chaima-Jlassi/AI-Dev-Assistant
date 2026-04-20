@@ -10,6 +10,7 @@ import {
   CheckCircle,
   ArrowRight,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import screenshotUml from "@/assets/screenshot-uml.jpg";
 import screenshotArch from "@/assets/screenshot-architecture.jpg";
 import screenshotReadme from "@/assets/screenshot-readme.jpg";
@@ -64,7 +65,19 @@ const steps = [
   },
 ];
 
+const ideOptions = [
+  { value: "vscode", label: "Visual Studio Code", url: "https://code.visualstudio.com/download" },
+  { value: "cursor", label: "Cursor", url: "https://cursor.com/downloads" },
+  { value: "jetbrains", label: "JetBrains Toolbox", url: "https://www.jetbrains.com/toolbox-app/" },
+];
+
 const ExtensionPage = () => {
+  const [selectedIde, setSelectedIde] = useState(ideOptions[0].value);
+  const selectedIdeOption = useMemo(
+    () => ideOptions.find((option) => option.value === selectedIde) ?? ideOptions[0],
+    [selectedIde],
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero */}
@@ -81,15 +94,27 @@ const ExtensionPage = () => {
             directly into your workflow — no context switching needed.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
+            <select
+              value={selectedIde}
+              onChange={(e) => setSelectedIde(e.target.value)}
+              className="h-11 rounded-md border border-border bg-background px-3 text-sm text-foreground"
+              aria-label="Select IDE"
+            >
+              {ideOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <Button size="lg" asChild>
               <a
-                
+                href={selectedIdeOption.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2"
               >
-                    <Download className="h-5 w-5" />
-                Extension Download
+                <Download className="h-5 w-5" />
+                Download for {selectedIdeOption.label}
               </a>
             </Button>
           </div>
@@ -225,6 +250,7 @@ const ExtensionPage = () => {
           </p>
           <Button size="lg" asChild>
             <a
+              href={selectedIdeOption.url}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-2"

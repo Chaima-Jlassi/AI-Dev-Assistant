@@ -1,0 +1,86 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_dev_assistant}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_dev_assistant}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./server/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ai-dev-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 5000
+      JWT_SECRET: ${JWT_SECRET:-replace-with-a-strong-secret}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-ai_dev_assistant}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "15000:5000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-dev-frontend
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      VITE_AUTH_API_URL: ${VITE_AUTH_API_URL:-http://localhost:15000/api/auth}
+      VITE_DB_URL: ${VITE_DB_URL:-}
+      VITE_DB_PUBLISHABLE_KEY: ${VITE_DB_PUBLISHABLE_KEY:-}
+    ports:
+      - "15173:15173"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-dev-backend
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
+      OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-180}
+      OLLAMA_MAX_RETRIES: ${OLLAMA_MAX_RETRIES:-3}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.3}
+      PLANTUML_URL: ${PLANTUML_URL:-http://www.plantuml.com/plantuml/png/}
+      PLANTUML_TIMEOUT: ${PLANTUML_TIMEOUT:-30}
+      PLANTUML_OUTPUT_DIR: ${PLANTUML_OUTPUT_DIR:-./outputs/diagrams}
+      PLANTUML_LOCAL: ${PLANTUML_LOCAL:-false}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      RAG_TOP_K: ${RAG_TOP_K:-2}
+      RAG_MIN_SIMILARITY: ${RAG_MIN_SIMILARITY:-0.3}
+      OUTPUT_DIAGRAMS_DIR: ${OUTPUT_DIAGRAMS_DIR:-./outputs/diagrams}
+      OUTPUT_README_DIR: ${OUTPUT_README_DIR:-./outputs/readme}
+      OUTPUT_TESTS_DIR: ${OUTPUT_TESTS_DIR:-./outputs/tests}
+      OUTPUT_EXPLANATIONS_DIR: ${OUTPUT_EXPLANATIONS_DIR:-./outputs/explanations}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FILE: ${LOG_FILE:-}
+
+volumes:
+  postgres_data:
