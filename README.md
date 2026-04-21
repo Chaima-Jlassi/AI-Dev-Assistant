@@ -33,5 +33,7 @@ The auth server DB vars are wired from these values:
 - `DB_USER=${POSTGRES_USER}`
 - `DB_PASSWORD=${POSTGRES_PASSWORD}`
 
-The `users` table is auto-created on first database initialization from:
-- `server/db/init.sql`
+On server startup, database bootstrap runs automatically:
+- If `DB_NAME` does not exist, it is created.
+- If it already exists, creation is skipped.
+- Required schema (`users` table) is ensured with idempotent SQL.
