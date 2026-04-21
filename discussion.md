@@ -129,3 +129,156 @@ docker exec -i ai-dev-postgres psql -U postgres -d ai_dev_assistant < backup.sql
 ```
 
 If you need everything (all DBs + roles), use `pg_dumpall` instead of `pg_dump`.
+
+## Steps to create and access the project database (from docker-compose)
+
+Below are the exact DB values used by `docker-compose.yml`:
+
+- **Container name**: `ai-dev-postgres`
+- **DB name**: `ai_dev_assistant` (from `POSTGRES_DB`, default)
+- **DB user**: `postgres` (from `POSTGRES_USER`, default)
+- **DB password**: `postgres` (from `POSTGRES_PASSWORD`, default)
+- **Host port**: `5432`
+- **Server-to-DB host inside Docker network**: `postgres`
+
+### 1. (Optional) Set custom DB credentials in `.env`
+
+If you want values different from defaults, create/update `.env` in the project root:
+
+```powershell
+POSTGRES_DB=ai_dev_assistant
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+```
+
+If this file is missing, Docker will use the defaults shown above.
+
+### 2. Start the PostgreSQL service
+
+```powershell
+docker compose up -d postgres
+```
+
+### 3. Verify PostgreSQL is healthy
+
+```powershell
+docker ps --filter "name=ai-dev-postgres"
+docker exec -i ai-dev-postgres pg_isready -U postgres -d ai_dev_assistant
+```
+
+### 4. Create the database manually (only if needed)
+
+`POSTGRES_DB` is created automatically on first initialization.  
+Use this only if you need to create another DB or recreate after changes:
+
+```powershell
+docker exec -i ai-dev-postgres psql -U postgres -d postgres -c "CREATE DATABASE ai_dev_assistant;"
+```
+
+### 5. Connect and confirm
+
+```powershell
+docker exec -it ai-dev-postgres psql -U postgres -d ai_dev_assistant
+```
+
+Then run:
+
+```sql
+SELECT current_database(), current_user;
+```
+
+Expected result:
+- `current_database = ai_dev_assistant`
+- `current_user = postgres`
+
+## Local verification run (executed now)
+
+You asked whether step 4 is required after completing steps 1 to 3.
+
+**Answer:** you do **not** need step 4 in your current state, because the database already exists and is reachable.
+
+### Commands executed
+
+```powershell
+docker ps --filter "name=ai-dev-postgres" --format "table {{.Names}}`t{{.Status}}`t{{.Ports}}"
+docker exec -i ai-dev-postgres pg_isready -U postgres -d ai_dev_assistant
+docker exec -i ai-dev-postgres psql -U postgres -d postgres -tAc "SELECT datname FROM pg_database WHERE datname='ai_dev_assistant';"
+docker exec -i ai-dev-postgres psql -U postgres -d ai_dev_assistant -tAc "SELECT current_database(), current_user;"
+docker exec -i ai-dev-postgres psql -U postgres -d ai_dev_assistant -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+```
+
+### Actual results
+
+- Container status: `ai-dev-postgres` is **Up (healthy)** and mapped on `0.0.0.0:5432->5432/tcp`
+- Readiness check: `/var/run/postgresql:5432 - accepting connections`
+- DB existence check returned: `ai_dev_assistant`
+- Identity query returned: `ai_dev_assistant|postgres`
+- Public tables count: `1`
+
+### Comment
+
+Your DB is already created and working correctly.  
+Step 4 (`CREATE DATABASE ai_dev_assistant;`) is only needed if:
+- you are creating a different database name, or
+- this database was dropped and must be recreated.
+
+## How to check the DB content
+
+Use these commands to inspect what is inside `ai_dev_assistant`.
+
+### Option A: interactive mode (best for exploration)
+
+Open psql:
+
+```powershell
+docker exec -it ai-dev-postgres psql -U postgres -d ai_dev_assistant
+```
+
+Inside psql, run:
+
+```sql
+\dt
+```
+- Lists all tables in the current database.
+
+```sql
+\d+ users
+```
+- Shows table structure (replace `users` with your table name).
+
+```sql
+SELECT * FROM users LIMIT 20;
+```
+- Shows sample rows (replace `users` with your table name).
+
+Exit:
+
+```sql
+\q
+```
+
+### Option B: one-shot commands from PowerShell
+
+List all public tables:
+
+```powershell
+docker exec -i ai-dev-postgres psql -U postgres -d ai_dev_assistant -c "\dt"
+```
+
+Count rows in a table:
+
+```powershell
+docker exec -i ai-dev-postgres psql -U postgres -d ai_dev_assistant -c "SELECT COUNT(*) FROM users;"
+```
+
+Preview first 20 rows:
+
+```powershell
+docker exec -i ai-dev-postgres psql -U postgres -d ai_dev_assistant -c "SELECT * FROM users LIMIT 20;"
+```
+
+### Quick interpretation
+
+- If `\dt` shows tables, the schema exists.
+- If `SELECT COUNT(*)` returns a number > 0, data was inserted.
+- If `SELECT * ... LIMIT 20` returns rows, your DB content is available and queryable.
