@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Send, Loader2, Bot, User, Plus, Download, ExternalLink } from "lucide-react";
+import { Send, Loader2, Bot, User, Plus, Download, ExternalLink, Trash2 } from "lucide-react";
 import { streamChat, type Msg } from "@/lib/streamChat";
 import ReactMarkdown from "react-markdown";
 
@@ -306,6 +306,18 @@ const AgentPage = () => {
     });
   };
 
+  const deleteConversation = (id: string) => {
+    setConversations((prev) => {
+      const remaining = prev.filter((c) => c.id !== id);
+      if (id === activeConversationId) {
+        const next = remaining[0] ?? createConversation();
+        setActiveConversationId(next.id);
+        if (!remaining.length) return [next];
+      }
+      return remaining;
+    });
+  };
+
   const sendToAssistant = async (params: {
     conversationId: string;
     history: Msg[];
@@ -598,17 +610,27 @@ const AgentPage = () => {
       <div className="border-b border-border px-4 py-2 overflow-x-auto">
         <div className="flex items-center gap-2 min-w-max">
           {conversations.map((conversation) => (
-            <Button
-              key={conversation.id}
-              variant={conversation.id === activeConversationId ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveConversationId(conversation.id)}
-              disabled={isLoading && conversation.id !== activeConversationId}
-              className="max-w-[260px] truncate"
-              title={conversation.title}
-            >
-              {conversation.title}
-            </Button>
+            <div key={conversation.id} className="relative group flex-shrink-0">
+              <Button
+                variant={conversation.id === activeConversationId ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveConversationId(conversation.id)}
+                disabled={isLoading && conversation.id !== activeConversationId}
+                className="max-w-[260px] truncate pr-7"
+                title={conversation.title}
+              >
+                {conversation.title}
+              </Button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); deleteConversation(conversation.id); }}
+                disabled={isLoading}
+                className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-destructive/20 text-muted-foreground hover:text-destructive"
+                title="Delete chat"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
           ))}
         </div>
       </div>
