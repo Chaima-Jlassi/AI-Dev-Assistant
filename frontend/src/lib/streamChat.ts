@@ -4,11 +4,13 @@ const CHAT_URL = `${(import.meta.env.VITE_AGENT_API_URL as string | undefined)?.
 
 export async function streamChat({
   messages,
+  goal,
   onDelta,
   onDone,
   onError,
 }: {
   messages: Msg[];
+  goal?: string;
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError?: (error: string) => void;
@@ -18,7 +20,7 @@ export async function streamChat({
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, goal }),
   });
 
   if (!resp.ok) {

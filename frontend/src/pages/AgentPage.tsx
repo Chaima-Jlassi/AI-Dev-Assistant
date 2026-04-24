@@ -310,8 +310,9 @@ const AgentPage = () => {
     conversationId: string;
     history: Msg[];
     anchorUserText: string;
+    goal?: string;
   }) => {
-    const { conversationId, history, anchorUserText } = params;
+    const { conversationId, history, anchorUserText, goal } = params;
     setIsLoading(true);
     let assistantSoFar = "";
 
@@ -337,6 +338,7 @@ const AgentPage = () => {
     try {
       await streamChat({
         messages: history,
+        goal,
         onDelta: upsert,
         onDone: () => setIsLoading(false),
         onError: (err) => {
@@ -382,6 +384,7 @@ const AgentPage = () => {
       conversationId: conversation.id,
       history,
       anchorUserText: syntheticUser.content,
+      goal: intake.goal || undefined,
     });
   };
 

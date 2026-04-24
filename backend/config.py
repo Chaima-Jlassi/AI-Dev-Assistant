@@ -29,6 +29,11 @@ class RAGConfig:
 
 
 @dataclass
+class GeminiConfig:
+    api_key: str = os.getenv("GEMINI_API_KEY", "")
+
+
+@dataclass
 class OutputConfig:
     diagrams_dir: str = os.getenv("OUTPUT_DIAGRAMS_DIR", "./outputs/diagrams")
     readme_dir: str = os.getenv("OUTPUT_README_DIR", "./outputs/readme")
@@ -45,6 +50,7 @@ class AppConfig:
     ollama: OllamaConfig = field(default_factory=OllamaConfig)
     plantuml: PlantUMLConfig = field(default_factory=PlantUMLConfig)
     rag: RAGConfig = field(default_factory=RAGConfig)
+    gemini: GeminiConfig = field(default_factory=GeminiConfig)
     outputs: OutputConfig = field(default_factory=OutputConfig)
 
     def __post_init__(self):

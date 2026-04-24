@@ -82,6 +82,7 @@ services:
       OUTPUT_README_DIR: ${OUTPUT_README_DIR:-./outputs/readme}
       OUTPUT_TESTS_DIR: ${OUTPUT_TESTS_DIR:-./outputs/tests}
       OUTPUT_EXPLANATIONS_DIR: ${OUTPUT_EXPLANATIONS_DIR:-./outputs/explanations}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FILE: ${LOG_FILE:-}

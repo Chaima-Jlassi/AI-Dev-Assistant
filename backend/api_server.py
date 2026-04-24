@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from config import CONFIG
+from gemini_prompts import GeminiPromptEngine
 from llm.ollama_client import get_client
 from llm.uml_generator import generate_plantuml
 from logger import logger
@@ -13,6 +14,17 @@ from rag.retriever_v2 import retrieve_context
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+_gemini_engine: GeminiPromptEngine | None = None
+
+
+def _get_gemini_engine() -> GeminiPromptEngine | None:
+    global _gemini_engine
+    if not CONFIG.gemini.api_key:
+        return None
+    if _gemini_engine is None:
+        _gemini_engine = GeminiPromptEngine(api_key=CONFIG.gemini.api_key)
+    return _gemini_engine
 
 
 def _build_prompt(messages: list[dict]) -> str:
@@ -112,6 +124,16 @@ def chat():
             return jsonify({"error": "last user message is required"}), 400
 
         latest_user_prompt = user_messages[-1]
+        goal = payload.get("goal", "")
+
+        if goal in ("readme", "architecture"):
+            engine = _get_gemini_engine()
+            if engine is None:
+                logger.warning("GEMINI_API_KEY not set; falling back to Ollama for goal=%s", goal)
+            else:
+                result = engine.generate_readme(code=latest_user_prompt) if goal == "readme" else engine.generate_architecture(code=latest_user_prompt)
+                return jsonify({"reply": result})
+
         diagram_count = int(payload.get("diagramCount", 1))
         diagram_count = max(1, min(diagram_count, 3))
 
