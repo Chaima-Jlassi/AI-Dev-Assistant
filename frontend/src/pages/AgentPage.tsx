@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Send, Loader2, Bot, User, Plus, Download, ExternalLink } from "lucide-react";
 import { streamChat, type Msg } from "@/lib/streamChat";
+import { getCurrentUser } from "@/lib/auth";
 import ReactMarkdown from "react-markdown";
 
 const WELCOME: Msg = {
@@ -32,7 +33,7 @@ type ConversationSession = {
   intake: IntakeState;
 };
 
-const STORAGE_KEY = "agent-conversations-v2";
+const getStorageKey = () => `agent-conversations-v2-${getCurrentUser()?.id ?? "guest"}`;
 const MAX_CONVERSATIONS = 20;
 const AGENT_BASE_URL =
   ((import.meta.env.VITE_AGENT_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:18000");
@@ -169,7 +170,7 @@ const getInitialChatState = (): { conversations: ConversationSession[]; activeCo
     const fresh = createConversation();
     return { conversations: [fresh], activeConversationId: fresh.id };
   }
-  const restored = parseStoredConversations(window.localStorage.getItem(STORAGE_KEY));
+  const restored = parseStoredConversations(window.localStorage.getItem(getStorageKey()));
   if (restored.length > 0) {
     return { conversations: restored, activeConversationId: restored[0].id };
   }
@@ -290,7 +291,7 @@ const AgentPage = () => {
 
   useEffect(() => {
     if (!conversations.length) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    localStorage.setItem(getStorageKey(), JSON.stringify(conversations));
   }, [conversations]);
 
   useEffect(() => {
