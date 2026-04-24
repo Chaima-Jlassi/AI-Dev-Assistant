@@ -1,5 +1,7 @@
 # Core LLM & HTTP
 requests>=2.31.0
+flask>=3.1.0
+flask-cors>=5.0.0
 
 # RAG / Embeddings
 sentence-transformers>=2.2.2

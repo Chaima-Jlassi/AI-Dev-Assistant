@@ -18,7 +18,13 @@ An intelligent development assistant powered by LLM &amp; MCP —  helps beginne
 - Frontend (Vite): `http://localhost:15173`
 - Auth server (Node/Express): `http://localhost:5000`
 - PostgreSQL: `localhost:5432`
-- Backend assistant (Python CLI): containerized as `backend` service with interactive TTY support.
+- Backend assistant API (Python + Ollama): `http://localhost:18000`
+
+### Agent chat integration
+
+- Frontend `/agent` calls: `VITE_AGENT_API_URL` (default `http://localhost:18000`)
+- Backend endpoint: `POST /api/chat`
+- Backend uses existing Ollama config (`OLLAMA_URL`, `OLLAMA_MODEL`, etc.) from environment.
 
 ### PostgreSQL variables used
 

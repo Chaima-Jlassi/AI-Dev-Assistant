@@ -15,7 +15,7 @@ class OllamaConfig:
 
 @dataclass
 class PlantUMLConfig:
-    server_url: str = os.getenv("PLANTUML_URL", "http://www.plantuml.com/plantuml/png/")
+    server_url: str = os.getenv("PLANTUML_URL", "https://www.plantuml.com/plantuml/png/")
     timeout: int = int(os.getenv("PLANTUML_TIMEOUT", "30"))
     output_dir: str = os.getenv("PLANTUML_OUTPUT_DIR", "./outputs/diagrams")
     use_local: bool = os.getenv("PLANTUML_LOCAL", "false").lower() == "true"

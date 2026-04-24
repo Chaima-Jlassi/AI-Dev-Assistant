@@ -1,6 +1,7 @@
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 from plantuml import PlantUML
@@ -29,21 +30,28 @@ class PlantUMLRenderer:
         logger.info(f"PlantUMLRenderer initialized (use_local={self.use_local})")
     
     def _render_online(self, uml_code: str) -> Optional[bytes]:
-        try:
-            logger.info(f"Using online server: {self.server_url}")
-            server = PlantUML(url=self.server_url)
-            image_data = server.processes(uml_code)
-            
-            if not image_data:
-                logger.error("No image data returned from PlantUML server")
-                return None
-            
-            logger.info(f"Successfully rendered diagram ({len(image_data)} bytes)")
-            return image_data
-            
-        except Exception as e:
-            logger.error(f"Error rendering with online server: {e}")
-            return None
+        server = PlantUML(url=self.server_url)
+        last_error_type = "UnknownError"
+
+        for attempt in range(1, 4):
+            try:
+                logger.info(f"Using online server: {self.server_url} (attempt {attempt}/3)")
+                image_data = server.processes(uml_code)
+
+                if not image_data:
+                    logger.error("No image data returned from PlantUML server")
+                    return None
+
+                logger.info(f"Successfully rendered diagram ({len(image_data)} bytes)")
+                return image_data
+            except Exception as e:
+                last_error_type = type(e).__name__
+                logger.error(f"Online PlantUML render failed ({last_error_type}) on attempt {attempt}/3")
+                if attempt < 3:
+                    time.sleep(1.5 * attempt)
+
+        logger.error(f"Online PlantUML rendering failed after retries ({last_error_type})")
+        return None
     
     def _render_local(self, uml_code: str) -> Optional[bytes]:
         """

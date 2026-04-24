@@ -48,6 +48,7 @@ services:
       - server
     environment:
       VITE_AUTH_API_URL: ${VITE_AUTH_API_URL:-http://localhost:15000/api/auth}
+      VITE_AGENT_API_URL: ${VITE_AGENT_API_URL:-http://localhost:18000}
       VITE_DB_URL: ${VITE_DB_URL:-}
       VITE_DB_PUBLISHABLE_KEY: ${VITE_DB_PUBLISHABLE_KEY:-}
     ports:
@@ -61,13 +62,16 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+    command: ["python", "api_server.py"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
       OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-180}
       OLLAMA_MAX_RETRIES: ${OLLAMA_MAX_RETRIES:-3}
       OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.3}
-      PLANTUML_URL: ${PLANTUML_URL:-http://www.plantuml.com/plantuml/png/}
+      PLANTUML_URL: ${PLANTUML_URL:-https://www.plantuml.com/plantuml/png/}
       PLANTUML_TIMEOUT: ${PLANTUML_TIMEOUT:-30}
       PLANTUML_OUTPUT_DIR: ${PLANTUML_OUTPUT_DIR:-./outputs/diagrams}
       PLANTUML_LOCAL: ${PLANTUML_LOCAL:-false}
@@ -81,6 +85,10 @@ services:
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FILE: ${LOG_FILE:-}
+    ports:
+      - "18000:8000"
+    volumes:
+      - ./backend:/app
 
 volumes:
   postgres_data:

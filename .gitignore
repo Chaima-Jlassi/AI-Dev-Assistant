@@ -50,6 +50,6 @@ server/node_modules
 .venv
 /backend/.vscode/
 /backend/node_modules
+integration.md
 
-
-
+/backend/outputs/diagrams/
