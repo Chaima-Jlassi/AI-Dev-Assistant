@@ -1,0 +1,97 @@
+=========================================================
+   GUIDE : CRÉER ET INSTALLER MON-EXTENSION.VSIX
+=========================================================
+
+---------------------------------------------------------
+ÉTAPE 1 — COMPILER L'EXTENSION
+---------------------------------------------------------
+
+Ouvre un terminal dans le dossier de ton extension :
+
+    cd vs-extension
+    npm run compile
+
+Si pas d'erreur → passe à l'étape 2.
+
+
+---------------------------------------------------------
+ÉTAPE 2 — INSTALLER VSCE (si pas déjà fait)
+---------------------------------------------------------
+
+    npm install -g @vscode/vsce --force
+
+Vérifier l'installation :
+
+    vsce --version
+
+
+---------------------------------------------------------
+ÉTAPE 3 — GÉNÉRER LE FICHIER .VSIX
+---------------------------------------------------------
+
+Toujours dans le dossier vs-extension :
+
+    vsce package
+
+Tu obtiendras un fichier : ai-dev-assistant-0.0.1.vsix
+
+⚠️  ERREURS FRÉQUENTES :
+  - "SVGs can't be used as icons"
+    → Convertis media/icon.svg en media/icon.png (128x128)
+    → Mets à jour package.json : "icon": "media/icon.png"
+
+  - "JSONParseError" dans package.json
+    → Vérifie les virgules en trop (trailing commas)
+    → Valide sur https://jsonlint.com
+
+
+---------------------------------------------------------
+ÉTAPE 4 — PLACER LE FICHIER DANS TON SITE REACT
+---------------------------------------------------------
+
+Copie le fichier .vsix généré dans le dossier public/ :
+
+    cp ai-dev-assistant-0.0.1.vsix ../frontend/public/mon-extension.vsix
+
+Le fichier doit être accessible à l'URL :
+    http://localhost:5173/mon-extension.vsix
+
+
+---------------------------------------------------------
+ÉTAPE 5 — TÉLÉCHARGER DEPUIS LE SITE
+---------------------------------------------------------
+
+1. Lance ton site React (npm run dev)
+2. Va sur la page Download Extension
+3. Clique sur le bouton "Télécharger l'extension VS Code"
+4. Le fichier mon-extension.vsix se télécharge
+
+
+---------------------------------------------------------
+ÉTAPE 6 — INSTALLER LE .VSIX DANS VS CODE
+---------------------------------------------------------
+
+OPTION A — Via l'interface VS Code :
+  1. Ouvre VS Code
+  2. Clique sur l'icône Extensions (Ctrl+Shift+X)
+  3. Clique sur les "..." en haut à droite
+  4. Sélectionne "Install from VSIX..."
+  5. Navigue vers mon-extension.vsix et sélectionne-le
+
+OPTION B — Via terminal :
+  code --install-extension mon-extension.vsix
+
+⚠️  NE PAS double-cliquer sur le fichier .vsix directement
+    → Windows ne sait pas l'ouvrir et retourne une erreur.
+
+
+---------------------------------------------------------
+VÉRIFICATION FINALE
+---------------------------------------------------------
+
+Après installation :
+  1. Recharge VS Code (Ctrl+Shift+P → "Reload Window")
+  2. Ouvre la palette (Ctrl+Shift+P)
+  3. Tape "DevAssist" → tu dois voir les commandes
+
+=========================================================

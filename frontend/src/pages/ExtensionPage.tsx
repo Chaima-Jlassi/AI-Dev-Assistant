@@ -78,6 +78,31 @@ const ExtensionPage = () => {
     [selectedIde],
   );
 
+  const handleDownload = async () => {
+    try {
+      const response = await fetch("/ai-dev-assistant-0.0.1.vsix", {
+        headers: {
+          Accept: "application/octet-stream",
+        },
+      });
+
+      if (!response.ok) throw new Error("Download failed");
+
+      const arrayBuffer = await response.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: "application/octet-stream" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ai-dev-assistant-0.0.1.vsix";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Download failed:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero */}
@@ -106,16 +131,14 @@ const ExtensionPage = () => {
                 </option>
               ))}
             </select>
-            <Button size="lg" asChild>
-              <a
-                href={selectedIdeOption.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2"
-              >
-                <Download className="h-5 w-5" />
-                Download for {selectedIdeOption.label}
-              </a>
+            <Button size="lg" onClick={handleDownload} className="flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              Download for {selectedIdeOption.label}
+            </Button>
+            {/* Direct .vsix download */}
+            <Button size="lg" variant="outline" onClick={handleDownload} className="flex items-center gap-2">
+              <Download className="h-5 w-5" />
+              Télécharger l'extension VS Code
             </Button>
           </div>
         </div>
@@ -248,15 +271,8 @@ const ExtensionPage = () => {
           <p className="text-muted-foreground mb-6">
             Install the extension and start Coding and Architecting with AI assistance Now!
           </p>
-          <Button size="lg" asChild>
-            <a
-              href={selectedIdeOption.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2"
-            >
-              Download Now <ArrowRight className="h-4 w-4" />
-            </a>
+          <Button size="lg" onClick={handleDownload} className="flex items-center gap-2">
+            Download Now <ArrowRight className="h-4 w-4" />
           </Button>
         </div>
       </section>

@@ -1,7 +1,7 @@
 {
   "name": "ai-dev-assistant",
   "displayName": "AI Dev Assistant",
-  "icon": "media/icon.svg",
+  
   "description": "Your AI-powered coding assistant",
   "version": "0.0.1",
   "engines": {
@@ -28,8 +28,7 @@
       "activitybar": [
         {
           "id": "aiDevAssistant",
-          "title": "AI Dev Assistant",
-          "icon": "media/icon.svg"
+          "title": "AI Dev Assistant"
         }
       ]
     },
