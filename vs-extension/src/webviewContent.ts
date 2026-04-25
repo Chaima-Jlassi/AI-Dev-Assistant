@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const nonce = getNonce();
 
-  return `<!DOCTYPE html>
+  return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
@@ -38,7 +38,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
 .scroll-area{flex:1;overflow-y:auto;padding:12px;}
 .scroll-area::-webkit-scrollbar{width:4px;}
 .scroll-area::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
-
 .section-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:8px;margin-top:4px;}
 
 /* Context bar */
@@ -299,7 +298,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 
-// State
+// ── State ──────────────────────────────────────────────────────────
 let currentFile = { name:'', path:'', language:'', content:'' };
 let selectedCode = '';
 let selectedLines = 0;
@@ -311,7 +310,7 @@ let outputText = '';
 let pendingTool = null;
 let pendingChat = null;
 
-// VS Code messages
+// ── VS Code messages ────────────────────────────────────────────────
 window.addEventListener('message', e => {
   const m = e.data;
   if (m.command === 'activeFileChanged') {
@@ -333,21 +332,20 @@ window.addEventListener('message', e => {
   }
 });
 
-// Tabs
+// ── Tabs ────────────────────────────────────────────────────────────
 function switchTab(name) {
   ['chat','tools','files'].forEach((n,i) => {
     document.querySelectorAll('.tab')[i].classList.toggle('active', n===name);
-    document.getElementById('panel-'+n).classList.toggle('active', n===name);
-    if(n!==name) document.getElementById('panel-'+n).style.display='none';
+    const p = document.getElementById('panel-'+n);
+    p.classList.toggle('active', n===name);
+    p.style.display = n===name ? 'flex' : 'none';
   });
-  document.getElementById('panel-'+name).style.display='flex';
   if (name==='files' && workspaceFiles.length===0) loadFiles();
 }
+// init panel display
+document.querySelectorAll('.panel').forEach((p,i) => { if(i>0) p.style.display='none'; });
 
-// Fix tab display
-document.querySelectorAll('.panel').forEach(p => { if(!p.classList.contains('active')) p.style.display='none'; });
-
-// Context
+// ── Context ─────────────────────────────────────────────────────────
 function updateCtx() {
   const has = !!currentFile.name;
   document.getElementById('fileBadge').textContent = currentFile.name || 'No file';
@@ -356,14 +354,13 @@ function updateCtx() {
   document.getElementById('ctxLang').textContent = has ? currentFile.language : 'Open a file to use tools';
 }
 
-// Selection
+// ── Selection ───────────────────────────────────────────────────────
 function showSelUI() {
   document.getElementById('selBanner').classList.add('on');
   document.getElementById('selLineCount').textContent = selectedLines + ' lines';
   document.getElementById('selPill').style.display = 'flex';
   document.getElementById('selPillLabel').textContent = selectedLines + ' lines selected';
 }
-
 function clearSelection() {
   selectedCode = ''; selectedLines = 0;
   document.getElementById('selBanner').classList.remove('on');
@@ -371,7 +368,7 @@ function clearSelection() {
   if (chatScope === 'selection') { chatScope = 'current'; updateScopePill(); }
 }
 
-// Chat scope
+// ── Chat scope ──────────────────────────────────────────────────────
 function toggleChatScope() {
   chatScope = chatScope === 'current' ? 'all' : 'current';
   updateScopePill();
@@ -387,14 +384,14 @@ function updateScopePill() {
   document.getElementById('scopeDot').style.background = colors[chatScope];
 }
 
-// Tool scope
+// ── Tool scope ──────────────────────────────────────────────────────
 function setToolScope(s) {
   toolScope = s;
   document.getElementById('sCurrent').classList.toggle('active', s==='current');
   document.getElementById('sAll').classList.toggle('active', s==='all');
 }
 
-// Build context
+// ── Build context ───────────────────────────────────────────────────
 function buildContext(scope, useSelection) {
   if (useSelection && selectedCode) {
     return 'File: ' + currentFile.name + ' (' + currentFile.language + ')\\n\\nSelected code:\\n' + selectedCode;
@@ -406,15 +403,15 @@ function buildContext(scope, useSelection) {
   return null; // triggers async all-files fetch
 }
 
-// Run tool
+// ── Run tool ────────────────────────────────────────────────────────
 function runTool(tool) {
   const prompts = {
     uml: 'Analyze the following code and generate a PlantUML diagram. For classes use class diagram, for flows use sequence diagram. Output ONLY valid PlantUML from @startuml to @enduml with no extra text.',
-    tests: 'Generate comprehensive unit tests for the following code. Use the appropriate testing framework for the language. Include: happy path tests, edge cases, error cases, and boundary conditions. Add a comment explaining each test.',
-    readme: 'Generate a professional README.md for the following code. Include: # Title, ## Description, ## Features, ## Installation, ## Usage with code examples, ## API Reference if relevant. Use proper markdown.',
-    architecture: 'Analyze the following code and provide: 1) High-level architecture overview, 2) Main components and responsibilities, 3) Data flow, 4) Design patterns used, 5) Strengths and areas for improvement.',
-    explain: 'Explain the following code clearly: what it does, how it works step by step, key functions/classes and their purpose, and any important patterns or gotchas to be aware of.',
-    review: 'Do a thorough code review. Report: 1) Bugs or logic errors, 2) Security vulnerabilities, 3) Performance bottlenecks, 4) Code quality issues, 5) Concrete improvements with code examples.'
+    tests: 'Generate comprehensive unit tests for the following code. Use the appropriate testing framework for the language. Include: happy path, edge cases, error cases, and boundary conditions. Add a comment for each test.',
+    readme: 'Generate a professional README.md for the following code. Include: # Title, ## Description, ## Features, ## Installation, ## Usage with code examples. Use proper markdown.',
+    architecture: 'Analyze the following code and provide: 1) High-level architecture overview 2) Main components and responsibilities 3) Data flow 4) Design patterns used 5) Strengths and improvements.',
+    explain: 'Explain the following code clearly: what it does, how it works step by step, key functions/classes, and any important patterns or gotchas.',
+    review: 'Do a thorough code review. Report: 1) Bugs or logic errors 2) Security vulnerabilities 3) Performance bottlenecks 4) Code quality issues 5) Concrete improvements with examples.'
   };
 
   const useSelection = !!(selectedCode && (tool === 'explain' || tool === 'review'));
@@ -434,7 +431,7 @@ function runTool(tool) {
   callBackend('/api/analyze', { prompt: prompts[tool], context: ctx, type: tool }, 'tool_' + Date.now());
 }
 
-// Chat
+// ── Chat ────────────────────────────────────────────────────────────
 function fillChat(text) {
   document.getElementById('chatInput').value = text;
   document.getElementById('chatInput').focus();
@@ -451,7 +448,6 @@ function sendChat() {
   const text = input.value.trim();
   if (!text) return;
   addMessage('user', text);
-  chatHistory.push({ role:'user', content:text });
   input.value = ''; input.style.height = 'auto';
   document.getElementById('sendBtn').disabled = true;
 
@@ -464,14 +460,18 @@ function sendChat() {
   }
   dispatchChat(text, ctx);
 }
+
 function dispatchChat(msg, ctx) {
-  callBackend('/api/chat', {
-    system: 'You are an expert AI coding assistant integrated into VS Code. You have full access to the user\\'s codebase. Be concise and accurate. Use backticks for inline code. Show code blocks with proper indentation.',
-    messages: chatHistory,
-    context: ctx,
-    message: msg
-  }, 'chat_' + Date.now());
+  // Build messages array matching what your backend expects
+  const messages = [
+    { role: 'user', content: 'Here is the code context I am working with:\\n\\n' + ctx },
+    { role: 'assistant', content: 'I have read your code. What would you like to know?' },
+    ...chatHistory,
+    { role: 'user', content: msg }
+  ];
+  callBackend('/api/chat', { messages }, 'chat_' + Date.now());
 }
+
 function addMessage(role, text) {
   const empty = document.getElementById('chatEmpty');
   if (empty) empty.remove();
@@ -483,20 +483,21 @@ function addMessage(role, text) {
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
   if (role === 'assistant') chatHistory.push({ role:'assistant', content:text });
+  if (role === 'user') chatHistory.push({ role:'user', content:text });
 }
 
-// All files handler
+// ── All files handler ───────────────────────────────────────────────
 function handleAllFiles(files) {
   const ctx = files.map(f => '// === ' + f.relativePath + ' ===\\n' + f.content).join('\\n\\n');
   if (pendingTool) {
     const t = pendingTool; pendingTool = null;
     const projectPrompts = {
-      uml: 'Generate a PlantUML architecture diagram showing the main components and their relationships across the entire project. Output ONLY PlantUML from @startuml to @enduml.',
-      tests: 'Generate unit tests covering the key functions and modules across this project.',
-      readme: 'Generate a complete professional README.md for this entire project based on all source files.',
+      uml: 'Generate a PlantUML architecture diagram for this entire project. Output ONLY PlantUML from @startuml to @enduml.',
+      tests: 'Generate unit tests covering key functions across this project.',
+      readme: 'Generate a complete professional README.md for this entire project.',
       architecture: 'Provide a complete architecture analysis of this entire project.',
-      explain: 'Explain the overall structure, purpose, and design of this project.',
-      review: 'Review this entire codebase. Identify global issues, inconsistencies, and improvements.'
+      explain: 'Explain the overall structure and purpose of this project.',
+      review: 'Review this entire codebase for issues and improvements.'
     };
     callBackend('/api/analyze', { prompt: projectPrompts[t], context: ctx, type: t }, 'tool_' + Date.now());
   }
@@ -506,40 +507,52 @@ function handleAllFiles(files) {
   }
 }
 
-// Backend
+// ── Backend calls ───────────────────────────────────────────────────
 function callBackend(endpoint, payload, reqId) {
   vscode.postMessage({ command:'callBackend', endpoint, payload, requestId: reqId });
 }
+
 function handleBackend(reqId, data, error) {
-  if (reqId.startsWith('chat_')) {
-    document.getElementById('sendBtn').disabled = false;
-    if (error || !data) {
-      addMessage('assistant', '❌ Backend error: ' + (error||'Unknown error') + '\\n\\nMake sure your Python backend is running.');
-    } else {
-      addMessage('assistant', data.response || data.result || JSON.stringify(data));
-    }
-    return;
-  }
+  // Health check
   if (reqId.startsWith('health_')) {
     const ok = !error && !!data;
     document.getElementById('statusDot').classList.toggle('on', ok);
-    document.getElementById('statusText').textContent = ok ? 'Backend connected' : 'Backend offline';
+    document.getElementById('statusText').textContent = ok ? 'Backend connected ✓' : 'Backend offline — start api_server.py';
     return;
   }
-  // tool response
+
+  // Chat response
+  if (reqId.startsWith('chat_')) {
+    document.getElementById('sendBtn').disabled = false;
+    if (error || !data) {
+      addMessage('assistant', '❌ Backend error: ' + (error||'Unknown') + '\\n\\nMake sure api_server.py is running on port 8000.');
+      return;
+    }
+    // Support both 'reply' (your backend) and 'response' (generic)
+    const reply = data.reply || data.response || data.result || JSON.stringify(data);
+    addMessage('assistant', reply);
+    return;
+  }
+
+  // Tool response
   if (error || !data) {
-    document.getElementById('toolOutput').innerHTML = '❌ Backend error: ' + esc(error||'Unknown') + '\\n\\nMake sure your Python backend is running.';
+    document.getElementById('toolOutput').innerHTML = '❌ Backend error: ' + esc(error||'Unknown') + '\\n\\nMake sure api_server.py is running on port 8000.';
     document.getElementById('outputActions').style.display = 'none';
     return;
   }
-  const result = data.response || data.result || data.output || JSON.stringify(data);
+
+  const result = data.response || data.reply || data.result || data.output || JSON.stringify(data);
   outputText = result;
   document.getElementById('toolOutput').textContent = result;
   document.getElementById('outputActions').style.display = 'flex';
-  if (result.trim().startsWith('@startuml')) renderUML(result);
+
+  // Auto-render UML if output starts with @startuml
+  if (result.trim().startsWith('@startuml')) {
+    renderUML(result);
+  }
 }
 
-// Output
+// ── Output actions ──────────────────────────────────────────────────
 function copyOutput() {
   navigator.clipboard.writeText(outputText).then(() =>
     vscode.postMessage({ command:'showInfo', text:'Copied to clipboard!' })
@@ -556,13 +569,13 @@ function clearOutput() {
   outputText = '';
 }
 
-// UML
+// ── UML render ──────────────────────────────────────────────────────
 function renderUML(code) {
   try {
     const enc = plantEncode(code);
     document.getElementById('umlImg').src = 'https://www.plantuml.com/plantuml/svg/' + enc;
     document.getElementById('umlWrap').style.display = 'block';
-  } catch(_){}
+  } catch(_) {}
 }
 function plantEncode(s) {
   function e6(b){ if(b<10)return String.fromCharCode(48+b); b-=10; if(b<26)return String.fromCharCode(65+b); b-=26; if(b<26)return String.fromCharCode(97+b); return b===0?'-':'_'; }
@@ -573,14 +586,17 @@ function plantEncode(s) {
   return r;
 }
 
-// Files
+// ── Files ───────────────────────────────────────────────────────────
 function loadFiles() {
   document.getElementById('fileTree').innerHTML = '<div style="color:var(--muted);font-size:11px">Loading…</div>';
   vscode.postMessage({ command:'getWorkspaceFiles' });
 }
 function renderFiles() {
   const tree = document.getElementById('fileTree');
-  if (!workspaceFiles.length) { tree.innerHTML = '<div style="color:var(--muted);font-size:11px">No files found.</div>'; return; }
+  if (!workspaceFiles.length) {
+    tree.innerHTML = '<div style="color:var(--muted);font-size:11px">No files found.</div>';
+    return;
+  }
   const icons = {ts:'🔷',tsx:'⚛️',js:'🟨',jsx:'⚛️',py:'🐍',java:'☕',cs:'🎯',cpp:'⚙️',c:'⚙️',go:'🔵',rs:'🦀',vue:'💚',html:'🌐',css:'🎨',json:'📋',md:'📝'};
   tree.innerHTML = workspaceFiles.map(f => {
     const ext = (f.name.split('.').pop()||'').toLowerCase();
@@ -595,13 +611,13 @@ function renderFiles() {
 }
 function openFile(p) { vscode.postMessage({ command:'openFile', filePath:p }); }
 
-// Utils
+// ── Utils ────────────────────────────────────────────────────────────
 function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-// Health
+// ── Health check ─────────────────────────────────────────────────────
 function checkHealth() { callBackend('/health', {}, 'health_' + Date.now()); }
 
-// Init
+// ── Init ──────────────────────────────────────────────────────────────
 vscode.postMessage({ command:'getCurrentFile' });
 loadFiles();
 checkHealth();

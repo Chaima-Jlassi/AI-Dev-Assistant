@@ -1,1 +1,7 @@
-{}
+{
+  "name": "ai-dev-assistant-main",
+  "version": "0.0.1",
+  "dependencies": {
+    "flask": "^0.2.10"
+  }
+}
