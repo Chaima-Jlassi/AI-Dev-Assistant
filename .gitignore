@@ -27,8 +27,7 @@ out/
 # -----------------------------
 # Local setup / environments
 # -----------------------------
-.vscode/
-**/.vscode/
+
 **/__pycache__/
 **/.dockerignore
 .venv/
@@ -48,7 +47,7 @@ env/
 server/.env
 server/node_modules
 .venv
-/backend/.vscode/
+
 /backend/node_modules
 integration.md
 
