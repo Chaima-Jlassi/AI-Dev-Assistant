@@ -100,28 +100,42 @@ def _detect_framework(code: str) -> Tuple[str, str, str]:
         return "Python", "pytest", ".py"
 
 
-def generate_tests(code: str, output_name: str = None) -> Optional[str]:
+def generate_tests(
+    code: str,
+    output_name: str = None,
+    language: str = None,
+    framework: str = None,
+) -> Optional[str]:
     """
     Generate test cases for the given source code.
 
     Args:
         code:        Raw source code.
         output_name: Override output filename (auto-generated if None).
+        language:    Language override (detected automatically if None).
+        framework:   Framework override (selected automatically if None).
 
     Returns:
         Absolute path to the saved test file, or None on failure.
     """
     from config import CONFIG
 
-    logger.info("Detecting language and test framework …")
-    lang, framework, ext = _detect_framework(code)
+    # Use provided language/framework or auto-detect
+    if language and framework:
+        ext = _FRAMEWORK_EXTENSION.get(framework.lower(), ".py")
+        lang = language
+        fw   = framework
+        logger.info(f"Using provided language={lang}, framework={fw}")
+    else:
+        logger.info("Detecting language and test framework …")
+        lang, fw, ext = _detect_framework(code)
 
     client = get_client()
-    prompt = _TEST_PROMPT.format(framework=framework, code=code)
+    prompt = _TEST_PROMPT.format(framework=fw, code=code)
 
-    logger.info(f"Generating {framework} tests …")
+    logger.info(f"Generating {fw} tests …")
     try:
-        response = client.call(prompt, temperature=0.2)
+        response = client.call(prompt, temperature=0.2, num_predict=4096)
     except OllamaError as e:
         logger.error(f"Test generation failed: {e}")
         return None

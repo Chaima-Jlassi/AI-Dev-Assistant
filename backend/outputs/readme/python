@@ -1,12 +1,41 @@
-Ce code est un exemple de code Python qui définit une classe `MCPTools` représentant un ensemble d'outils pour générer des tests unitaires à partir de code source. Les langages pris en charge sont :
+# Project Title
+PlantUML Code Extractor and Validator
 
-- Python
-- JavaScript/TypeScript (avec Jest)
-- Java
-- Go
-- Rust
-- Un langage non spécifique
+## Overview
+This project is a Python script that extracts PlantUML diagram codes from a given text and validates their syntax. It logs warnings for any issues found during the extraction or validation process.
 
-L'utilisation des outils se fait en appelant les méthodes correspondantes de la classe `MCPTools`. Le code inclut également une fonction `get_mcp_tools()` qui retourne l'instance globale des outils MCP.
+## Features
+- Extraction of multiple PlantUML diagram codes from a single text file
+- Syntax validation for each extracted PlantUML code block
+- Logging of warnings for missing tags, short content, and other validation issues
 
-Il est important de noter que ce n'est qu'un exemple et qu'il pourrait y avoir plusieurs manières différentes d'implémenter ces fonctionnalités.
+## Project Structure
+The project consists of a single Python file named `extractor.py`. It imports functions from the logger module, which is not included in this code snippet but should be present elsewhere in the project.
+
+## Requirements
+This project has the following dependencies:
+- Python 3.x
+- `logging` module (built-in)
+
+## Installation
+1. Clone or download the repository containing both the script and the logger module.
+2. Ensure you have Python 3.x installed on your system.
+3. Navigate to the project directory in a terminal/command prompt.
+4. Run the script with the following command: `python extractor.py <path_to_text_file>`
+
+## Usage
+```bash
+python extractor.py path/to/your/text_file.txt
+```
+The script will output extracted and validated PlantUML codes, along with any warnings found during the process.
+
+## Configuration
+No explicit configuration is required for this project.
+
+## Architecture
+The script defines functions for retrying actions with backoff, validating PlantUML syntax, and extracting PlantUML diagrams from a given text. It logs warnings when issues are detected during these operations.
+
+## License
+This project is licensed under the MIT License.
+
+```

@@ -119,7 +119,7 @@ def handle_readme():
 
     # Save locally
     slug = _slugify(input("Short project name (for filename) [project]: ").strip() or "project")
-    output_path = Path(CONFIG.outputs.docs_dir) / f"README_{slug}.md"
+    output_path = Path(CONFIG.outputs.readme_dir) / f"README_{slug}.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(result["content"], encoding="utf-8")
     print(f"\n  README saved → {output_path}")

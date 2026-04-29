@@ -26,7 +26,10 @@ Yes — for this project, you create a virtual environment, install dependencies
    ```
 
 5. Run the app:
-   ```powershell
+   ```powershell 1
+   python -m mcp_tools.server --mode http --port 8001   
+   ```
+   ```powershell 2
    python app.py
    ```
 
