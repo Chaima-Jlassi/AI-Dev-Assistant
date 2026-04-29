@@ -1,57 +1,23 @@
 """
-PCD-FOC — Main interactive CLI
-Supports four modes in one persistent session:
-  1. Generate UML diagrams
-  2. Generate README from code
-  3. Generate test cases from code
-  4. Explain code
-The Ollama client is created ONCE and reused across all operations.
+app.py — Interactive CLI
+========================
+All AI work is delegated to the MCP server via MCPClient.
+No direct LLM / PlantUML / RAG calls here.
 """
+
 import sys
 import time
 from pathlib import Path
 from typing import Optional
 
 from config import CONFIG
-
-from llm.ollama_client import get_client         
-
-def _readme():
-    from llm.readme_generator import generate_readme
-    return generate_readme
-
-def _tests():
-    from llm.test_generator import generate_tests
-    return generate_tests
-
-def _explain():
-    from llm.explainer import explain_code
-    return explain_code
-
-def _uml():
-    from llm.uml_generator import generate_plantuml
-    return generate_plantuml
-
-def _retriever():
-    from rag.retriever_v2 import retrieve_context
-    return retrieve_context
-
-def _renderer():
-    from mcp.tools_v2 import PlantUMLRenderer
-    return PlantUMLRenderer
-
-
-#helpers
+from mcp_tools.mcp_client import get_mcp_client  # ← single import for all AI work
 
 SEPARATOR = "=" * 60
 
-def _hr():
-    print(SEPARATOR)
 
-def _banner(text: str):
-    _hr()
-    print(f"  {text}")
-    _hr()
+def _hr():   print(SEPARATOR)
+def _banner(text: str): _hr(); print(f"  {text}"); _hr()
 
 
 def _read_code_from_user() -> Optional[str]:
@@ -88,7 +54,7 @@ def _read_code_from_user() -> Optional[str]:
         if not code.strip():
             print("  No code received.")
             return None
-        print(f" Received {len(code)} chars")
+        print(f"  Received {len(code)} chars")
         return code
 
 
@@ -99,11 +65,10 @@ def _slugify(text: str, maxlen: int = 40) -> str:
     return s[:maxlen]
 
 
-# ── feature handlers ──────────────────────────────────────────────────────────
+# ── Feature handlers ──────────────────────────────────────────────────────────
 
 def handle_diagram():
-    """UML diagram generation (original feature, preserved intact)."""
-    _banner("  UML Diagram Generator")
+    _banner("UML Diagram Generator")
 
     user_input = input("Describe the diagram you want:\n> ").strip()
     if not user_input:
@@ -116,120 +81,114 @@ def handle_diagram():
     except ValueError:
         count = 1
 
-    print("\n Retrieving context …")
-    try:
-        retrieve_context = _retriever()
-        context = retrieve_context(user_input, k=CONFIG.rag.top_k)
-        if not context:
-            context = "(no examples found)"
-    except Exception as e:
-        print(f"  Context retrieval error: {e}")
-        context = "(context retrieval failed)"
+    diagram_type = input("Diagram type? [auto / sequence / class / activity / component]\n> ").strip() or "auto"
 
-    print(" Generating PlantUML …")
-    try:
-        generate_plantuml = _uml()
-        uml_blocks = generate_plantuml(user_input, context, count=count)
-    except:
-        print("  UML generation failed.")
-        uml_blocks = []
+    print("\n  Calling MCP: generate_uml_diagram …")
+    mcp = get_mcp_client()
+    result = mcp.generate_uml_diagram(
+        description=user_input,
+        diagram_type=diagram_type,
+        count=count,
+    )
 
-    if not uml_blocks:
-        print("  No valid UML generated.")
+    if not result.get("success"):
+        print(f"  Error: {result.get('error')}")
         return
 
-    print(f"  Generated {len(uml_blocks)} block(s). Rendering …")
-    PlantUMLRenderer = _renderer()
-    renderer = PlantUMLRenderer()
-    timestamp = int(time.time() * 1000)
-    saved = []
-
-    for i, block in enumerate(uml_blocks, start=1):
-        fname = f"diagram_{i}.png"
-        try:
-            path = renderer.render(block, fname)
-            saved.append(path)
-            print(f"    [{i}] {Path(path).absolute()}")
-        except:
-            print(f"    [{i}] Failed to render diagram.")
-    if saved:
-        print(f"\n  {len(saved)} diagram(s) saved in {CONFIG.outputs.diagrams_dir}/")
-    else:
-        print("  No diagrams rendered successfully.")
+    for d in result.get("diagrams", []):
+        print(f"  [{d['index']}] Saved → {d['image_path']}")
+    print(f"\n  {result['count']} diagram(s) saved in {CONFIG.outputs.diagrams_dir}/")
 
 
 def handle_readme():
-    """README generation from source code."""
-    _banner("  README Generator")
+    _banner("README Generator")
 
     code = _read_code_from_user()
     if not code:
         return
 
+    language = input("Primary language [python]: ").strip() or "python"
+
+    print("\n  Calling MCP: generate_readme …")
+    mcp = get_mcp_client()
+    result = mcp.generate_readme(project_description=code, language=language)
+
+    if not result.get("success"):
+        print(f"  Error: {result.get('error')}")
+        return
+
+    # Save locally
     slug = _slugify(input("Short project name (for filename) [project]: ").strip() or "project")
-    output_name = f"README_{slug}.md"
-
-    print("\n Generating README …")
-    generate_readme = _readme()
-    path = generate_readme(code, output_name=output_name)
-
-    if path:
-        print(f"\n  README saved → {path}")
-    else:
-        print("  README generation failed. Check logs.")
+    output_path = Path(CONFIG.outputs.docs_dir) / f"README_{slug}.md"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(result["content"], encoding="utf-8")
+    print(f"\n  README saved → {output_path}")
 
 
 def handle_tests():
-    """Test-case generation from source code."""
-    _banner("  Test Case Generator")
+    _banner("Test Case Generator")
 
     code = _read_code_from_user()
     if not code:
         return
 
-    slug = _slugify(input("Short name for the test file (no extension) [generated]: ").strip() or "generated")
-   
-    output_name = None  
-    import re
-    from llm.test_generator import _detect_framework
-    print("\n Detecting language and framework …")
-    lang, framework, ext = _detect_framework(code)
-    print(f"   Detected: {lang} → {framework}")
-    output_name = f"{slug}{ext}"
+    # Let MCP detect language first
+    print("\n  Calling MCP: detect_language …")
+    mcp = get_mcp_client()
+    lang_result = mcp.detect_language(code)
+    detected_lang = lang_result.get("language", "python")
+    print(f"  Detected language: {detected_lang}  (confidence {lang_result.get('confidence', 0):.0%})")
 
-    print(f" Generating {framework} tests …")
-    generate_tests = _tests()
-    path = generate_tests(code, output_name=output_name)
+    language = input(f"Override language? [{detected_lang}]: ").strip() or detected_lang
 
-    if path:
-        print(f"\n  Tests saved → {path}")
-        print(f"   Framework: {framework}")
-    else:
-        print(" Test generation failed. Check logs.")
+    # Let MCP select framework
+    print("  Calling MCP: select_test_framework …")
+    fw_result = mcp.select_test_framework(language)
+    default_fw = fw_result.get("framework", "pytest")
+    available = fw_result.get("available_frameworks", [default_fw])
+    print(f"  Available frameworks: {', '.join(available)}")
+    framework = input(f"Framework? [{default_fw}]: ").strip() or default_fw
+
+    print(f"\n  Calling MCP: generate_unit_tests ({language} / {framework}) …")
+    result = mcp.generate_unit_tests(code=code, language=language, framework=framework)
+
+    if not result.get("success"):
+        print(f"  Error: {result.get('error')}")
+        return
+
+    ext = fw_result.get("extension", ".py")
+    slug = _slugify(input("Short name for the test file [generated]: ").strip() or "generated")
+    output_path = Path(CONFIG.outputs.tests_dir) / f"{slug}{ext}"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(result["content"], encoding="utf-8")
+    print(f"\n  Tests saved → {output_path}  (framework: {framework})")
 
 
 def handle_explain():
-    """Code explanation."""
-    _banner("  Code Explainer")
+    _banner("Code Explainer")
 
     code = _read_code_from_user()
     if not code:
         return
 
-    slug = _slugify(input("Short name for output file [explanation]: ").strip() or "explanation")
-    output_name = f"{slug}.md"
+    
 
-    print("\n Generating explanation …")
-    explain_code = _explain()
-    path = explain_code(code, output_name=output_name)
+    print("\n  Calling MCP: explain_code …")
+    mcp = get_mcp_client()
+    result = mcp.explain_code(code=code, detail_level="high")
 
-    if path:
-        print(f"\n  Explanation saved → {path}")
-    else:
-        print("  Explanation failed. Check logs.")
+    if not result.get("success"):
+        print(f"  Error: {result.get('error')}")
+        return
+
+    slug = _slugify(input("Output file name [explanation]: ").strip() or "explanation")
+    output_path = Path(CONFIG.outputs.explanations_dir) / f"{slug}.md"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(result["explanation"], encoding="utf-8")
+    print(f"\n  Explanation saved → {output_path}")
 
 
-# ── main menu loop ────────────────────────────────────────────────────────────
+# ── Menu ──────────────────────────────────────────────────────────────────────
 
 _MENU = """
 What would you like to do?
@@ -251,39 +210,39 @@ _HANDLERS = {
 
 def main():
     print("\n" + SEPARATOR)
-    print("  Welcome to Your AI Dev Assistant")
+    print("  Welcome to Your AI Dev Assistant  (MCP-powered)")
     print(SEPARATOR)
 
-  
-    print("\n Connecting to Ollama …")
+    print("\n  Connecting to MCP server …")
     try:
-        client = get_client()  
-        # lightweight ping
-        client.call("Say OK", temperature=0.0)
-        print("  Ollama connected and ready\n")
+        mcp = get_mcp_client()
+        tools = mcp.list_tools()
+        tool_names = [t["name"] for t in tools.get("tools", [])]
+        print(f"  MCP server ready — {len(tool_names)} tools: {', '.join(tool_names)}\n")
     except Exception as e:
-        print(f"   Unexpected startup error: {e}\n")
+        print(f"  Warning: could not connect to MCP server: {e}\n")
 
     while True:
         print(_MENU)
         choice = input("> ").strip().lower()
 
         if choice in ("q", "quit", "exit"):
-            print("\n Goodbye!")
+            print("\n  Goodbye!")
             break
 
         handler = _HANDLERS.get(choice)
         if handler is None:
-            print(" Invalid choice. Please enter 1, 2, 3, 4, or q.")
+            print("  Invalid choice. Please enter 1, 2, 3, 4, or q.")
             continue
 
         try:
             handler()
         except KeyboardInterrupt:
-            print("\n\n   Interrupted. Returning to menu …")
+            print("\n\n  Interrupted. Returning to menu …")
+        except Exception as e:
+            print(f"  Something went wrong: {e}")
             if CONFIG.debug:
                 import traceback; traceback.print_exc()
-            print(f"  Something went wrong: {e}")
 
         input("\nPress Enter to continue …")
 

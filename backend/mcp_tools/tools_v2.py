@@ -1,4 +1,3 @@
-
 import os
 import subprocess
 import time
@@ -30,27 +29,61 @@ class PlantUMLRenderer:
         logger.info(f"PlantUMLRenderer initialized (use_local={self.use_local})")
     
     def _render_online(self, uml_code: str) -> Optional[bytes]:
-        server = PlantUML(url=self.server_url)
-        last_error_type = "UnknownError"
-
+        """
+        Render via PlantUML online server.
+        Tries the plantuml library first, then falls back to a direct
+        HTTP GET which exposes the real error if something is wrong.
+        """
         for attempt in range(1, 4):
             try:
                 logger.info(f"Using online server: {self.server_url} (attempt {attempt}/3)")
-                image_data = server.processes(uml_code)
 
-                if not image_data:
-                    logger.error("No image data returned from PlantUML server")
-                    return None
+                # ── Method 1: plantuml Python library ────────────────────
+                try:
+                    server = PlantUML(url=self.server_url)
+                    image_data = server.processes(uml_code)
+                    if image_data:
+                        logger.info(f"Rendered via plantuml lib ({len(image_data)} bytes)")
+                        return image_data
+                    logger.warning("plantuml lib returned empty bytes, trying direct HTTP …")
+                except Exception as lib_err:
+                    logger.warning(f"plantuml lib error: {lib_err!r} — trying direct HTTP …")
 
-                logger.info(f"Successfully rendered diagram ({len(image_data)} bytes)")
-                return image_data
-            except Exception as e:
-                last_error_type = type(e).__name__
-                logger.error(f"Online PlantUML render failed ({last_error_type}) on attempt {attempt}/3")
+                # ── Method 2: direct HTTP GET (bypasses library quirks) ──
+                import zlib, base64, string
+
+                def _encode(text: str) -> str:
+                    """PlantUML custom deflate+base64 URL encoding."""
+                    compressed = zlib.compress(text.encode("utf-8"))[2:-4]
+                    b64 = base64.b64encode(compressed).decode("ascii")
+                    src = string.ascii_uppercase + string.ascii_lowercase + string.digits + "+/"
+                    dst = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
+                    return b64.translate(str.maketrans(src, dst))
+
+                base_url = self.server_url.rstrip("/")
+                if base_url.endswith("/png"):
+                    base_url = base_url[:-4]
+                png_url = f"{base_url}/png/{_encode(uml_code)}"
+
+                logger.info(f"Direct HTTP GET → {png_url[:100]}")
+                resp = requests.get(png_url, timeout=self.timeout)
+
+                if resp.status_code == 200 and resp.content:
+                    logger.info(f"Rendered via direct HTTP ({len(resp.content)} bytes)")
+                    return resp.content
+
+                logger.error(
+                    f"Direct HTTP failed: HTTP {resp.status_code}  "
+                    f"content-type={resp.headers.get('Content-Type')}  "
+                    f"body={resp.text[:300]!r}"
+                )
+
+            except Exception as exc:
+                logger.error(f"Online render attempt {attempt}/3 exception: {exc!r}")
                 if attempt < 3:
                     time.sleep(1.5 * attempt)
 
-        logger.error(f"Online PlantUML rendering failed after retries ({last_error_type})")
+        logger.error("Online PlantUML rendering failed after all retries")
         return None
     
     def _render_local(self, uml_code: str) -> Optional[bytes]:

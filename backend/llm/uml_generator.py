@@ -14,6 +14,15 @@ IMPORTANT RULES:
 3. Use proper PlantUML syntax.
 4. Generate clear, well-structured diagrams.
 5. Separate multiple diagrams with a blank line.
+6. You MUST generate a {diagram_type} diagram. Do not generate any other diagram type.
+
+DIAGRAM TYPE INSTRUCTIONS:
+- sequence:  Use participants, arrows (-> and -->), activate/deactivate, alt/else blocks.
+- class:     Use class keyword, attributes with types, methods, visibility (+/-/#), inheritance (<|--), associations (-->).
+- use-case:  Use actor, usecase, and relationships (-->).
+- activity:  Use start/stop, :action:, if/else, fork/join.
+- component: Use component, interface, and dependencies.
+- auto:      Choose the most appropriate diagram type for the request.
 
 EXAMPLES:
 @startuml
@@ -44,7 +53,9 @@ CONTEXT FROM EXAMPLES:
 USER REQUEST:
 {user_input}
 
-Generate exactly {count} PlantUML diagram(s).
+REQUIRED DIAGRAM TYPE: {diagram_type}
+
+Generate exactly {count} PlantUML {diagram_type} diagram(s).
 """
 
 
@@ -52,6 +63,7 @@ def generate_plantuml(
     user_input: str,
     context: str,
     count: int = 1,
+    diagram_type: str = "auto",
 ) -> Optional[List[str]]:
     """
     Generate PlantUML diagram(s) from a natural-language request.
@@ -66,6 +78,7 @@ def generate_plantuml(
         context=context,
         user_input=user_input,
         count=count,
+        diagram_type=diagram_type,
     )
     logger.info(f"Generating {count} PlantUML diagram(s) …")
     try:

@@ -1,0 +1,12 @@
+Ce code est un exemple de code Python qui définit une classe `MCPTools` représentant un ensemble d'outils pour générer des tests unitaires à partir de code source. Les langages pris en charge sont :
+
+- Python
+- JavaScript/TypeScript (avec Jest)
+- Java
+- Go
+- Rust
+- Un langage non spécifique
+
+L'utilisation des outils se fait en appelant les méthodes correspondantes de la classe `MCPTools`. Le code inclut également une fonction `get_mcp_tools()` qui retourne l'instance globale des outils MCP.
+
+Il est important de noter que ce n'est qu'un exemple et qu'il pourrait y avoir plusieurs manières différentes d'implémenter ces fonctionnalités.

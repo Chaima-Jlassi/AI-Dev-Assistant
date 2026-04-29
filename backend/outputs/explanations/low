@@ -1,0 +1,40 @@
+## What This Code Does
+This code implements a simple text search system using sentence transformers and the Faiss library. Given a list of predefined documents, it loads an embedding model, encodes the documents and queries into vectors, creates a Faiss index for efficient similarity search, and retrieves the most relevant context from the stored documents based on user queries.
+
+## Key Components
+1. `SentenceTransformer`: This is a Python library that allows for generating textual embeddings (fixed-length vector representations of text). In this case, it uses the 'all-MiniLM-L6-v2' model for encoding sentences.
+2. `faiss`: A C++ library developed by Facebook AI Research for efficient similarity search and clustering of dense vectors. The code uses its IndexFlatL2 class to build an index based on the cosine similarity between vectors.
+3. `DOCUMENTS`: A list containing predefined documents that will be encoded, indexed, and searched.
+4. `retrieve_context()`: A function to perform a search given a user query by computing the distances between the query embedding and the embedded documents using the created Faiss index, and returning the closest matching documents.
+
+## How It Works — Step by Step
+1. The code imports necessary libraries and loads the sentence transformer model.
+2. It encodes all the predefined documents (DOCUMENTS) into vectors using the loaded model.
+3. Using the Faiss library, it creates an index based on the cosine similarity between the embedded documents' vectors.
+4. When a user query is provided, it first encodes the query into a vector using the same model.
+5. It uses the created Faiss index to compute the distances between the query embedding and all embedded documents.
+6. It then retrieves the indices of the closest matching documents based on the computed distances (k nearest neighbors).
+7. Finally, it returns the context of the retrieved documents as a string joined by newlines.
+
+## Design Patterns & Decisions
+This code does not explicitly use any design patterns, but its structure follows the Model-View-Controller (MVC) pattern in that the model encodes and manages the data (documents and queries), the view is the user interface (printing results), and the controller handles the logic for indexing and searching.
+
+## Complexity
+1. Time complexity: O(n + mlogk) for encoding documents, O(nlogn) for creating the Faiss index, O(mlogk) for search operations, where n is the number of documents and m is the number of user queries.
+2. Space complexity: O(n) for storing the encoded document vectors in memory and the created Faiss index. The model's embedding size affects both time and space complexity.
+3. Potential bottlenecks: Time-consuming text encoding, large document corpora, or high-dimensional embeddings may cause performance issues due to increased computational and memory demands.
+
+## Potential Issues / Improvements
+1. The code only handles single queries at a time; handling multiple queries or implementing pagination would improve the system's scalability.
+2. The search result is based on cosine similarity, which may not always yield the most relevant results, especially for documents with diverse topics. More sophisticated search algorithms could be employed to enhance the relevance of search results.
+3. For better performance, the Faiss index could be optimized by using techniques such as quantization or hierarchical clustering.
+4. The current implementation does not handle duplicate documents in the DOCUMENTS list, which may lead to incorrect search results if there are duplicates with varying relevance scores.
+5. As the code only uses the 'all-MiniLM-L6-v2' model for encoding texts, the performance and quality of the search system might be improved by experimenting with different models or fine-tuning existing ones on a relevant corpus.
+6. The current implementation does not handle user inputs, making it essential to create a user interface for interacting with the system.
+7. Lastly, this code does not implement any error handling or exception management, which should be addressed for a production-ready search system.
+
+## Score (out of 10)
+Code quality: 6
+Maintainability: 5
+Clarity: 7
+The code is relatively straightforward and easy to understand, but it lacks comments and could benefit from more structured organization. Additionally, the current implementation does not cover some essential features for a production-ready system.
