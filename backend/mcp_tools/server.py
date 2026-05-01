@@ -221,6 +221,8 @@ def explain_code(code: str, detail_level: str = "medium") -> Dict[str, Any]:
                 tmp.unlink()   # clean up tmp file
             except Exception:
                 pass
+            if not content.strip():
+                return {"success": False, "error": "explain_code produced empty explanation"}
             return {"success": True, "explanation": content, "detail_level": detail_level}
         return {"success": False, "error": "Explanation returned no output"}
     except Exception as exc:
