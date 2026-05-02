@@ -55,22 +55,22 @@ def _get_plantuml_renderer():
 
 # ── Singletons ────────────────────────────────────────────────────────────────
 
-_rag = None
-_renderer = None
+_rag_instance = None
+_renderer_instance = None
 
 def _rag():
-    global _rag
-    if _rag is None:
+    global _rag_instance
+    if _rag_instance is None:
         logger.info("Initialising RAG retriever …")
-        _rag = _get_rag_retriever()()
-    return _rag
+        _rag_instance = _get_rag_retriever()()
+    return _rag_instance
 
 def _renderer():
-    global _renderer
-    if _renderer is None:
+    global _renderer_instance
+    if _renderer_instance is None:
         logger.info("Initialising PlantUML renderer …")
-        _renderer = _get_plantuml_renderer()()
-    return _renderer
+        _renderer_instance = _get_plantuml_renderer()()
+    return _renderer_instance
 
 
 # ── MCP Server instance ───────────────────────────────────────────────────────

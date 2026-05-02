@@ -336,20 +336,43 @@ def analyze():
             return jsonify({"result": _diagrams_to_markdown(all_diagrams)})
 
         if tool_type == "readme":
-            return jsonify({
-                "result": (
-                    "README generation is available from the VS Code extension only. "
-                    "Please open the extension panel and request README generation there so the tool can access your project context directly."
+            folder_content = str(payload.get("folder_content", "")).strip()
+            project_name = str(payload.get("project_name", "")).strip()
+            language = str(payload.get("language", "")).strip()
+            if not folder_content:
+                return jsonify({
+                    "error": "folder_content is required for README generation. "
+                             "Send the concatenated file contents from the workspace."
+                }), 400
+            try:
+                result_text = _get_gemini().generate_readme(
+                    code=_compact_context(folder_content),
+                    project_name=project_name,
+                    language=language or "auto",
                 )
-            })
+            except Exception as exc:
+                logger.error(f"README generation dependency failure: {exc}")
+                return jsonify({"result": _runtime_guidance(str(exc), feature="README generation")})
+            if not str(result_text).strip():
+                return jsonify({"error": "README generation returned empty output"}), 500
+            return jsonify({"result": result_text})
 
         if tool_type == "tests":
-            mcp = _get_mcp()
-            combined = f"{prompt}\n\nContext:\n{context}".strip()
-            result = mcp.generate_unit_tests(code=combined, language="python")
-            if not result.get("success"):
-                return jsonify({"error": result.get("error", "test generation failed")}), 500
-            return jsonify({"result": result.get("content", "")})
+            code = str(payload.get("code", context)).strip() or prompt
+            language = str(payload.get("language", "")).strip()
+            if not code:
+                return jsonify({"error": "code is required for test generation"}), 400
+            try:
+                result_text = _get_gemini().generate_tests(
+                    code=_compact_context(code),
+                    language=language or "auto",
+                )
+            except Exception as exc:
+                logger.error(f"Test generation dependency failure: {exc}")
+                return jsonify({"result": _runtime_guidance(str(exc), feature="Unit test generation")})
+            if not str(result_text).strip():
+                return jsonify({"error": "test generation returned empty output"}), 500
+            return jsonify({"result": result_text})
 
         if tool_type == "architecture":
             project_summary = str(intake.get("projectSummary", "")).strip()
@@ -424,15 +447,33 @@ def analyze():
                 return jsonify({"error": "other generation returned empty output"}), 500
             return jsonify({"result": other_text})
 
-        if tool_type in ("explain", "review"):
+        if tool_type == "explain":
+            code = context or prompt
+            language = str(payload.get("language", "")).strip()
+            detail_level = str(payload.get("detail_level", "standard")).strip()
+            if not code:
+                return jsonify({"error": "code is required for explanation"}), 400
+            try:
+                result_text = _get_gemini().generate_explanation(
+                    code=_compact_context(code),
+                    language=language or "auto",
+                    detail_level=detail_level if detail_level in ("brief", "standard", "detailed") else "standard",
+                )
+            except Exception as exc:
+                logger.error(f"Explanation generation dependency failure: {exc}")
+                return jsonify({"result": _runtime_guidance(str(exc), feature="Code explanation")})
+            if not str(result_text).strip():
+                return jsonify({"error": "explanation returned empty output"}), 500
+            return jsonify({"result": result_text})
+
+        if tool_type == "review":
             mcp = _get_mcp()
             combined = f"{prompt}\n\nContext:\n{context}".strip()
-            level = "high" if tool_type == "review" else "medium"
-            result = mcp.explain_code(code=combined, detail_level=level)
+            result = mcp.explain_code(code=combined, detail_level="high")
             output, explain_error = _extract_text_result(
                 result,
                 ("explanation", "content"),
-                "explain returned empty output",
+                "review returned empty output",
             )
             if explain_error:
                 return jsonify({"error": explain_error}), 500

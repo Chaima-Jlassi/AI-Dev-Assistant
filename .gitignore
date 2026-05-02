@@ -51,3 +51,8 @@ server/node_modules
 integration.md
 
 /backend/outputs/diagrams/
+
+.bruin.yml
+
+# Claude Code internal worktrees
+.claude/worktrees/

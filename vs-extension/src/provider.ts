@@ -6,6 +6,7 @@ import { getWebviewContent } from './webviewContent';
 export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'aiDevAssistant.panel';
   private _view?: vscode.WebviewView;
+  private _log = vscode.window.createOutputChannel('AI Dev Assistant');
 
   constructor(
     private readonly _extensionUri: vscode.Uri,
@@ -21,8 +22,9 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.options = {
       enableScripts: true,
-      localResourceRoots: [this._extensionUri]
+      localResourceRoots: [this._extensionUri],
     };
+    (webviewView as any).retainContextWhenHidden = true;
 
     webviewView.webview.html = getWebviewContent(webviewView.webview, this._extensionUri);
 
@@ -244,9 +246,10 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
 
   // ── Proxy backend call (avoids CORS) ──────────────
   private async _callBackend(endpoint: string, payload: unknown, requestId: string) {
-    if (!this._view) return;
+    if (!this._view) { this._log.appendLine(`[callBackend] no view, skipping ${endpoint}`); return; }
     const config = vscode.workspace.getConfiguration('aiDevAssistant');
     const backendUrl = config.get<string>('backendUrl') || 'http://localhost:18000';
+    this._log.appendLine(`[callBackend] ${endpoint} → ${backendUrl}`);
 
     try {
       const http = await import('node:http');
@@ -257,12 +260,10 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
       const method = endpoint === '/health' ? 'GET' : 'POST';
       const options = {
         method,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Content-Type': 'application/json' } as Record<string, string | number>
       };
       if (method === 'POST') {
-        (options.headers as Record<string, number | string>)['Content-Length'] = Buffer.byteLength(body);
+        options.headers['Content-Length'] = Buffer.byteLength(body);
       }
 
       const lib = url.protocol === 'https:' ? https : http;
@@ -274,23 +275,24 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
           res.on('end', () => resolve(data));
         });
         req.on('error', reject);
-          if (method === 'POST') req.write(body);
+        if (method === 'POST') req.write(body);
         req.end();
       });
 
-      this._view.webview.postMessage({
-        command: 'backendResponse',
-        requestId,
-        data: JSON.parse(result),
-        error: null
-      });
+      this._log.appendLine(`[callBackend] response: ${result.slice(0, 200)}`);
+      const parsed = JSON.parse(result);
+      if (this._view) {
+        this._view.webview.postMessage({ command: 'backendResponse', requestId, data: parsed, error: null });
+        this._log.appendLine(`[callBackend] postMessage sent for ${requestId}`);
+      } else {
+        this._log.appendLine(`[callBackend] view gone before postMessage`);
+      }
     } catch (e: unknown) {
-      this._view.webview.postMessage({
-        command: 'backendResponse',
-        requestId,
-        data: null,
-        error: e instanceof Error ? e.message : 'Backend unreachable'
-      });
+      const msg = e instanceof Error ? e.message : 'Backend unreachable';
+      this._log.appendLine(`[callBackend] ERROR: ${msg}`);
+      if (this._view) {
+        this._view.webview.postMessage({ command: 'backendResponse', requestId, data: null, error: msg });
+      }
     }
   }
 }

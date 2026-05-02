@@ -9,13 +9,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { getCurrentUser } from "@/lib/auth";
 
 type Msg = { role: "user" | "assistant"; content: string };
-type ServiceType = "uml" | "readme" | "architecture" | "recommendation" | "other";
+type ServiceType = "uml" | "readme" | "architecture" | "recommendation" | "other" | "explanation";
 type UMLStep = "diagramTypes" | "system" | "actors" | "extra" | "review" | "done";
 type ArchitectureStage = "project" | "services" | "constraints" | "chat";
 type RecommendationStage = "problem" | "context" | "constraints" | "chat";
+type ExplanationStage = "code" | "detail" | "chat";
 
 type FlowState = {
-  stage: "service" | "uml" | "readme" | "architecture" | "recommendation" | "other";
+  stage: "service" | "uml" | "readme" | "architecture" | "recommendation" | "other" | "explanation";
   service: ServiceType | "";
   uml: {
     step: UMLStep;
@@ -36,6 +37,11 @@ type FlowState = {
     context: string;
     constraints: string;
   };
+  explanation: {
+    stage: ExplanationStage;
+    code: string;
+    detailLevel: "brief" | "standard" | "detailed";
+  };
 };
 
 type ConversationSession = {
@@ -48,10 +54,11 @@ type ConversationSession = {
 
 const WELCOME: Msg = {
   role: "assistant",
-  content: "Choose a service to start: UML generation, README generation, architecture suggestions, recommendations, or other coding help.",
+  content: "Choose a service to start: code explanation, UML generation, README generation, architecture suggestions, recommendations, or other coding help.",
 };
 
 const SERVICE_OPTIONS: Array<{ value: ServiceType; label: string; hint: string }> = [
+  { value: "explanation", label: "Code Explanation", hint: "Paste code and get a clear, structured explanation at your chosen detail level." },
   { value: "uml", label: "UML generation", hint: "Guided wizard with diagram choices and project details." },
   { value: "readme", label: "README generation", hint: "Use the VS Code extension for repository-aware README output." },
   { value: "architecture", label: "Architecture suggestions", hint: "Discussion flow focused on components, services, and constraints." },
@@ -102,6 +109,11 @@ const defaultFlow = (): FlowState => ({
     context: "",
     constraints: "",
   },
+  explanation: {
+    stage: "code",
+    code: "",
+    detailLevel: "standard",
+  },
 });
 
 const buildConversationTitle = (messages: Msg[]): string => {
@@ -149,6 +161,7 @@ const normalizeFlow = (value: unknown): FlowState => {
     uml: { ...base.uml, ...(candidate.uml ?? {}) },
     architecture: { ...base.architecture, ...(candidate.architecture ?? {}) },
     recommendation: { ...base.recommendation, ...(candidate.recommendation ?? {}) },
+    explanation: { ...base.explanation, ...(candidate.explanation ?? {}) },
   };
 };
 
@@ -286,6 +299,8 @@ const AgentPage = () => {
         assistantText = "Architecture discussion started. Describe your project in a few sentences.";
       } else if (service === "recommendation") {
         assistantText = "Recommendation discussion started. What decision or problem do you want help with?";
+      } else if (service === "explanation") {
+        assistantText = "Paste the code you want explained. I'll ask for a detail level before generating the explanation.";
       } else {
         assistantText = "Tell me what coding or software engineering help you need.";
       }
@@ -578,6 +593,52 @@ const AgentPage = () => {
       return;
     }
 
+    if (flow.stage === "explanation") {
+      if (flow.explanation.stage === "code") {
+        if (text.length < 5) {
+          appendAssistant(conversationId, "Please paste some code to explain.");
+          return;
+        }
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [
+            ...conversation.messages,
+            { role: "assistant", content: "Choose a detail level: **brief** (quick summary), **standard** (structured walkthrough), or **detailed** (deep dive with patterns and gotchas). Type one to continue." },
+          ],
+          flow: { ...conversation.flow, explanation: { ...conversation.flow.explanation, code: text, stage: "detail" } },
+        }));
+        return;
+      }
+
+      if (flow.explanation.stage === "detail" || flow.explanation.stage === "chat") {
+        const detailMap: Record<string, "brief" | "standard" | "detailed"> = {
+          brief: "brief", standard: "standard", detailed: "detailed",
+        };
+        const detailLevel = detailMap[text.toLowerCase().trim()] ?? "standard";
+        setIsLoading(true);
+        try {
+          const data = await callAnalyze({
+            type: "explain",
+            prompt: "Explain this code.",
+            context: flow.explanation.code,
+            detail_level: detailLevel,
+            language: "",
+          });
+          const reply = typeof data.result === "string" ? data.result : "No explanation returned.";
+          updateConversation(conversationId, (conversation) => ({
+            ...conversation,
+            messages: [...conversation.messages, { role: "assistant", content: reply }],
+            flow: { ...conversation.flow, explanation: { ...conversation.flow.explanation, detailLevel, stage: "chat" } },
+          }));
+        } catch (err) {
+          appendAssistant(conversationId, `Explanation failed:\n\n${err instanceof Error ? err.message : String(err)}`);
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
       const current = conversations.find((item) => item.id === conversationId);
@@ -636,6 +697,7 @@ const AgentPage = () => {
     ? flow.stage === "other"
       || flow.stage === "architecture"
       || flow.stage === "recommendation"
+      || flow.stage === "explanation"
       || (flow.stage === "uml" && flow.uml.step !== "diagramTypes")
     : false;
   const inputPlaceholder = !canEnterDiscussionText
@@ -648,7 +710,13 @@ const AgentPage = () => {
           : flow.uml.step === "extra"
             ? "Optional: add further details..."
             : "Add revisions or notes..."
-      : "Type your message...";
+      : flow?.stage === "explanation"
+        ? flow.explanation.stage === "code"
+          ? "Paste the code you want explained..."
+          : flow.explanation.stage === "detail"
+            ? "Type: brief, standard, or detailed..."
+            : "Follow-up or ask to explain at a different detail level..."
+        : "Type your message...";
   const isSendDisabled = isLoading || !input.trim() || !canEnterDiscussionText;
   const isServiceSelectionStep = flow?.stage === "service";
   const isUmlDiagramSelectionStep = flow?.stage === "uml" && flow.uml.step === "diagramTypes";
