@@ -1,27 +1,41 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Send, Loader2, Bot, User, Plus, Download, ExternalLink } from "lucide-react";
-import { streamChat, type Msg } from "@/lib/streamChat";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Bot, Download, ExternalLink, Loader2, Plus, Send, Trash2, User } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
-const WELCOME: Msg = {
-  role: "assistant",
-  content:
-    "👋 Let's build this together.\n\nStart with your **project idea** (even rough notes are fine), and I’ll help fill in gaps.",
-};
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { getCurrentUser } from "@/lib/auth";
 
-type DiscussionGoal = "readme" | "architecture" | "uml" | "recommendation";
-type IntakeStep = "projectIdea" | "goal" | "details" | "ready";
+type Msg = { role: "user" | "assistant"; content: string };
+type ServiceType = "uml" | "readme" | "architecture" | "recommendation" | "other";
+type UMLStep = "diagramTypes" | "system" | "actors" | "extra" | "review" | "done";
+type ArchitectureStage = "project" | "services" | "constraints" | "chat";
+type RecommendationStage = "problem" | "context" | "constraints" | "chat";
 
-type IntakeState = {
-  step: IntakeStep;
-  projectIdea: string;
-  goal: DiscussionGoal | "";
-  details: string[];
+type FlowState = {
+  stage: "service" | "uml" | "readme" | "architecture" | "recommendation" | "other";
+  service: ServiceType | "";
+  uml: {
+    step: UMLStep;
+    diagramTypes: string[];
+    systemDescription: string;
+    actorsServices: string;
+    extraInfo: string;
+  };
+  architecture: {
+    stage: ArchitectureStage;
+    projectSummary: string;
+    services: string;
+    constraints: string;
+  };
+  recommendation: {
+    stage: RecommendationStage;
+    problem: string;
+    context: string;
+    constraints: string;
+  };
 };
 
 type ConversationSession = {
@@ -29,59 +43,66 @@ type ConversationSession = {
   title: string;
   messages: Msg[];
   updatedAt: number;
-  intake: IntakeState;
+  flow: FlowState;
 };
 
-const STORAGE_KEY = "agent-conversations-v2";
+const WELCOME: Msg = {
+  role: "assistant",
+  content: "Choose a service to start: UML generation, README generation, architecture suggestions, recommendations, or other coding help.",
+};
+
+const SERVICE_OPTIONS: Array<{ value: ServiceType; label: string; hint: string }> = [
+  { value: "uml", label: "UML generation", hint: "Guided wizard with diagram choices and project details." },
+  { value: "readme", label: "README generation", hint: "Use the VS Code extension for repository-aware README output." },
+  { value: "architecture", label: "Architecture suggestions", hint: "Discussion flow focused on components, services, and constraints." },
+  { value: "recommendation", label: "Recommendations", hint: "Decision support with trade-offs and next actions." },
+  { value: "other", label: "Other", hint: "General coding/software engineering discussion." },
+];
+
+const UML_DIAGRAM_TYPES = [
+  "class",
+  "sequence",
+  "activity",
+  "component",
+  "use-case",
+  "state",
+  "deployment",
+  "erd",
+];
+
 const MAX_CONVERSATIONS = 20;
 const AGENT_BASE_URL =
   ((import.meta.env.VITE_AGENT_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:18000");
 
-const GOAL_OPTIONS: Array<{ value: DiscussionGoal; label: string }> = [
-  { value: "readme", label: "README file" },
-  { value: "architecture", label: "Architecture design" },
-  { value: "uml", label: "UML diagrams" },
-  { value: "recommendation", label: "Recommendations" },
-];
+const getStorageKey = () => {
+  const user = getCurrentUser();
+  const userKey = user?.id ?? user?.email ?? "guest";
+  return `agent-conversations-v3:${userKey}`;
+};
 
-const defaultIntake = (): IntakeState => ({
-  step: "projectIdea",
-  projectIdea: "",
-  goal: "",
-  details: [],
+const defaultFlow = (): FlowState => ({
+  stage: "service",
+  service: "",
+  uml: {
+    step: "diagramTypes",
+    diagramTypes: [],
+    systemDescription: "",
+    actorsServices: "",
+    extraInfo: "",
+  },
+  architecture: {
+    stage: "project",
+    projectSummary: "",
+    services: "",
+    constraints: "",
+  },
+  recommendation: {
+    stage: "problem",
+    problem: "",
+    context: "",
+    constraints: "",
+  },
 });
-
-const isMsg = (value: unknown): value is Msg => {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as { role?: unknown; content?: unknown };
-  return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string";
-};
-
-const normalizeGoal = (value: unknown): DiscussionGoal | "" => {
-  if (value === "readme" || value === "architecture" || value === "uml" || value === "recommendation") return value;
-  return "";
-};
-
-const normalizeIntake = (value: unknown, messages: Msg[]): IntakeState => {
-  if (!value || typeof value !== "object") {
-    return messages.length > 0 ? { ...defaultIntake(), step: "ready" } : defaultIntake();
-  }
-  const candidate = value as { step?: unknown; projectIdea?: unknown; goal?: unknown; details?: unknown };
-  const rawStep = candidate.step;
-  const step: IntakeStep =
-    rawStep === "projectIdea" || rawStep === "goal" || rawStep === "details" || rawStep === "ready"
-      ? rawStep
-      : (messages.length > 0 ? "ready" : "projectIdea");
-  const details = Array.isArray(candidate.details)
-    ? candidate.details.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    : [];
-  return {
-    step,
-    projectIdea: typeof candidate.projectIdea === "string" ? candidate.projectIdea : "",
-    goal: normalizeGoal(candidate.goal),
-    details,
-  };
-};
 
 const buildConversationTitle = (messages: Msg[]): string => {
   const firstUserMessage = messages.find((message) => message.role === "user" && message.content.trim().length > 0);
@@ -99,7 +120,7 @@ const createConversation = (messages: Msg[] = []): ConversationSession => {
     title: buildConversationTitle(messages),
     messages,
     updatedAt: Date.now(),
-    intake: defaultIntake(),
+    flow: defaultFlow(),
   };
 };
 
@@ -113,46 +134,73 @@ const upsertConversations = (
     .slice(0, MAX_CONVERSATIONS);
 };
 
+const removeConversationById = (
+  conversations: ConversationSession[],
+  conversationId: string,
+): ConversationSession[] => conversations.filter((conversation) => conversation.id !== conversationId);
+
+const normalizeFlow = (value: unknown): FlowState => {
+  if (!value || typeof value !== "object") return defaultFlow();
+  const candidate = value as Partial<FlowState>;
+  const base = defaultFlow();
+  return {
+    ...base,
+    ...candidate,
+    uml: { ...base.uml, ...(candidate.uml ?? {}) },
+    architecture: { ...base.architecture, ...(candidate.architecture ?? {}) },
+    recommendation: { ...base.recommendation, ...(candidate.recommendation ?? {}) },
+  };
+};
+
+const isMsg = (value: unknown): value is Msg => {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { role?: unknown; content?: unknown };
+  return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string";
+};
+
 const parseStoredConversations = (rawValue: string | null): ConversationSession[] => {
   if (!rawValue) return [];
   try {
     const parsed = JSON.parse(rawValue);
     if (!Array.isArray(parsed)) return [];
-
-    const normalized = parsed
+    return parsed
       .map((item) => {
         if (!item || typeof item !== "object") return null;
-        const candidate = item as {
-          id?: unknown;
-          title?: unknown;
-          messages?: unknown;
-          updatedAt?: unknown;
-          intake?: unknown;
-        };
+        const candidate = item as Partial<ConversationSession>;
         if (typeof candidate.id !== "string") return null;
         const messages = Array.isArray(candidate.messages) ? candidate.messages.filter(isMsg) : [];
         const title =
-          typeof candidate.title === "string" && candidate.title.trim().length > 0
-            ? candidate.title.trim()
+          typeof candidate.title === "string" && candidate.title.trim()
+            ? candidate.title
             : buildConversationTitle(messages);
-        const updatedAt =
-          typeof candidate.updatedAt === "number" && Number.isFinite(candidate.updatedAt)
-            ? candidate.updatedAt
-            : Date.now();
+        const updatedAt = typeof candidate.updatedAt === "number" ? candidate.updatedAt : Date.now();
         return {
           id: candidate.id,
           title,
           messages,
           updatedAt,
-          intake: normalizeIntake(candidate.intake, messages),
-        };
+          flow: normalizeFlow(candidate.flow),
+        } satisfies ConversationSession;
       })
-      .filter((conversation): conversation is ConversationSession => Boolean(conversation));
-
-    return normalized.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CONVERSATIONS);
+      .filter((item): item is ConversationSession => Boolean(item))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, MAX_CONVERSATIONS);
   } catch {
     return [];
   }
+};
+
+const getInitialChatState = (): { conversations: ConversationSession[]; activeConversationId: string } => {
+  if (typeof window === "undefined") {
+    const fresh = createConversation();
+    return { conversations: [fresh], activeConversationId: fresh.id };
+  }
+  const restored = parseStoredConversations(window.localStorage.getItem(getStorageKey()));
+  if (restored.length > 0) {
+    return { conversations: restored, activeConversationId: restored[0].id };
+  }
+  const fresh = createConversation();
+  return { conversations: [fresh], activeConversationId: fresh.id };
 };
 
 const resolveMediaUrl = (url?: string): string | null => {
@@ -164,109 +212,14 @@ const resolveMediaUrl = (url?: string): string | null => {
   return `${AGENT_BASE_URL}/${trimmed.replace(/^\/+/, "")}`;
 };
 
-const getInitialChatState = (): { conversations: ConversationSession[]; activeConversationId: string } => {
-  if (typeof window === "undefined") {
-    const fresh = createConversation();
-    return { conversations: [fresh], activeConversationId: fresh.id };
-  }
-  const restored = parseStoredConversations(window.localStorage.getItem(STORAGE_KEY));
-  if (restored.length > 0) {
-    return { conversations: restored, activeConversationId: restored[0].id };
-  }
-  const fresh = createConversation();
-  return { conversations: [fresh], activeConversationId: fresh.id };
+const buildContextFromMessages = (messages: Msg[], limit = 10): string => {
+  const tail = messages.slice(-limit);
+  return tail.map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`).join("\n\n");
 };
 
-const hasAnyKeyword = (text: string, keywords: string[]): boolean =>
-  keywords.some((keyword) => text.includes(keyword));
-
-const assessMissingInfo = (intake: IntakeState): string[] => {
-  const missing: string[] = [];
-  const projectIdea = intake.projectIdea.trim();
-  const fullContext = `${projectIdea}\n${intake.details.join("\n")}`.toLowerCase();
-
-  if (projectIdea.length < 20) {
-    missing.push("A little more about what it does and who uses it.");
-  }
-
-  if (!intake.goal) {
-    missing.push("Select the discussion goal from the dropdown.");
-    return missing;
-  }
-
-  if (intake.goal === "readme") {
-    if (!hasAnyKeyword(fullContext, ["react", "node", "python", "java", "typescript", "flask", "api", "database"])) {
-      missing.push("Tech stack hints (language/framework/API/database).");
-    }
-    if (!hasAnyKeyword(fullContext, ["feature", "user", "flow", "use case", "module", "functionality"])) {
-      missing.push("Main features or user flows.");
-    }
-  }
-
-  if (intake.goal === "architecture") {
-    if (!hasAnyKeyword(fullContext, ["frontend", "backend", "service", "api", "database", "queue", "auth"])) {
-      missing.push("Main components/services and what each one does.");
-    }
-    if (!hasAnyKeyword(fullContext, ["scale", "performance", "security", "latency", "availability", "constraint"])) {
-      missing.push("Any constraints (performance, scale, security, timeline, etc.).");
-    }
-  }
-
-  if (intake.goal === "uml") {
-    if (!hasAnyKeyword(fullContext, ["class", "sequence", "activity", "state", "component", "use case", "er"])) {
-      missing.push("Preferred UML type (class, sequence, activity, component, etc.).");
-    }
-    if (!hasAnyKeyword(fullContext, ["actor", "entity", "service", "step", "flow", "relationship"])) {
-      missing.push("Main actors/entities/components and interactions.");
-    }
-  }
-
-  if (intake.goal === "recommendation") {
-    if (!hasAnyKeyword(fullContext, ["problem", "challenge", "issue", "decision", "trade-off", "constraint"])) {
-      missing.push("Current challenge or decision point.");
-    }
-    if (!hasAnyKeyword(fullContext, ["goal", "deadline", "team", "budget", "time", "priority"])) {
-      missing.push("Context limits (team, timeline, priorities, budget).");
-    }
-  }
-
-  return missing;
-};
-
-const goalLabel = (goal: DiscussionGoal): string => {
-  const option = GOAL_OPTIONS.find((item) => item.value === goal);
-  return option?.label ?? goal;
-};
-
-const buildAssumptions = (missing: string[], intake: IntakeState): string[] => {
-  if (missing.length === 0) return [];
-  const assumptions = [
-    "Infer sensible defaults for missing details and continue instead of blocking.",
-    "If actors/entities/components are missing, propose a practical baseline set and use it.",
-    "Keep the tone friendly and collaborative, not overly formal.",
-  ];
-  if (intake.goal === "uml") {
-    assumptions.push("When unsure, default to one class diagram and one sequence diagram with clearly named actors/services.");
-  }
-  if (intake.goal === "architecture") {
-    assumptions.push("When unsure, propose a common web architecture (frontend, API service, database, auth, optional cache).");
-  }
-  return assumptions;
-};
-
-const buildDeliveryPrompt = (intake: IntakeState, missing: string[] = []): string => {
-  const detailsBlock = intake.details.length > 0 ? intake.details.map((d, i) => `${i + 1}. ${d}`).join("\n") : "None";
-  const assumptions = buildAssumptions(missing, intake);
-  const assumptionsBlock = assumptions.length > 0 ? assumptions.map((a, i) => `${i + 1}. ${a}`).join("\n") : "None";
-  const missingBlock = missing.length > 0 ? missing.map((m, i) => `${i + 1}. ${m}`).join("\n") : "None";
-  return [
-    `Project idea: ${intake.projectIdea}`,
-    `Goal: ${intake.goal ? goalLabel(intake.goal) : "Not selected"}`,
-    `Additional details:\n${detailsBlock}`,
-    `Potentially missing details:\n${missingBlock}`,
-    `Assumptions to apply if needed:\n${assumptionsBlock}`,
-    "Produce the requested output now. Be interactive, friendly, and complete as much as possible without waiting for perfect inputs.",
-  ].join("\n\n");
+const parseError = async (resp: Response): Promise<string> => {
+  const data = await resp.json().catch(() => ({}));
+  return typeof data.error === "string" ? data.error : `Request failed (${resp.status})`;
 };
 
 const AgentPage = () => {
@@ -282,15 +235,11 @@ const AgentPage = () => {
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [activeConversationId, conversations],
   );
-
-  const visibleMessages = useMemo(
-    () => [WELCOME, ...(activeConversation?.messages ?? [])],
-    [activeConversation],
-  );
+  const visibleMessages = useMemo(() => [WELCOME, ...(activeConversation?.messages ?? [])], [activeConversation]);
 
   useEffect(() => {
     if (!conversations.length) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    localStorage.setItem(getStorageKey(), JSON.stringify(conversations));
   }, [conversations]);
 
   useEffect(() => {
@@ -306,244 +255,344 @@ const AgentPage = () => {
     });
   };
 
-  const sendToAssistant = async (params: {
-    conversationId: string;
-    history: Msg[];
-    anchorUserText: string;
-  }) => {
-    const { conversationId, history, anchorUserText } = params;
-    setIsLoading(true);
-    let assistantSoFar = "";
-
-    const upsert = (chunk: string) => {
-      assistantSoFar += chunk;
-      updateConversation(conversationId, (conversation) => {
-        const nextMessages: Msg[] = [...conversation.messages];
-        const last = nextMessages[nextMessages.length - 1];
-        const beforeLast = nextMessages[nextMessages.length - 2];
-        if (last?.role === "assistant" && beforeLast?.role === "user" && beforeLast.content === anchorUserText) {
-          nextMessages[nextMessages.length - 1] = { role: "assistant", content: assistantSoFar };
-        } else {
-          nextMessages.push({ role: "assistant", content: assistantSoFar });
-        }
-        return {
-          ...conversation,
-          messages: nextMessages,
-          title: buildConversationTitle(nextMessages),
-        };
-      });
-    };
-
-    try {
-      await streamChat({
-        messages: history,
-        onDelta: upsert,
-        onDone: () => setIsLoading(false),
-        onError: (err) => {
-          updateConversation(conversationId, (conversation) => {
-            const errorReply: Msg = { role: "assistant", content: `I hit an error while processing your request:\n\n${err}` };
-            const nextMessages: Msg[] = [
-              ...conversation.messages,
-              errorReply,
-            ];
-            return {
-              ...conversation,
-              messages: nextMessages,
-              title: buildConversationTitle(nextMessages),
-            };
-          });
-          setIsLoading(false);
-        },
-      });
-    } catch {
-      setIsLoading(false);
-    }
-  };
-
-  const generateGoalOutput = async (conversation: ConversationSession, intake: IntakeState, missing: string[] = []) => {
-    const introAssistant: Msg = {
-      role: "assistant",
-      content: missing.length > 0
-        ? `Nice, I’ll move forward with smart assumptions for **${intake.goal ? goalLabel(intake.goal) : "this goal"}** and you can refine anything after.`
-        : `Awesome — I’ve got enough to generate **${intake.goal ? goalLabel(intake.goal) : "this goal"}**.`,
-    };
-    const syntheticUser: Msg = {
-      role: "user",
-      content: buildDeliveryPrompt(intake, missing),
-    };
-    const history = [...conversation.messages, introAssistant, syntheticUser];
-    updateConversation(conversation.id, (current) => ({
-      ...current,
-      messages: history,
-      intake: { ...intake, step: "ready" },
-      title: buildConversationTitle(history),
-    }));
-    await sendToAssistant({
-      conversationId: conversation.id,
-      history,
-      anchorUserText: syntheticUser.content,
+  const appendAssistant = (conversationId: string, content: string) => {
+    updateConversation(conversationId, (conversation) => {
+      const nextMessages = [...conversation.messages, { role: "assistant", content } as Msg];
+      return { ...conversation, messages: nextMessages, title: buildConversationTitle(nextMessages) };
     });
   };
 
-  const confirmGoal = async () => {
+  const callAnalyze = async (body: Record<string, unknown>) => {
+    const resp = await fetch(`${AGENT_BASE_URL}/api/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(await parseError(resp));
+    return resp.json();
+  };
+
+  const chooseService = (service: ServiceType) => {
     if (!activeConversation || isLoading) return;
-    const selectedGoal = activeConversation.intake.goal;
-    if (!selectedGoal) {
-      const infoMsg: Msg = { role: "assistant", content: "Pick a goal from the dropdown and I’ll take it from there ✨" };
+    updateConversation(activeConversation.id, (conversation) => {
+      const nextFlow = { ...conversation.flow, stage: service, service };
+      let assistantText = "";
+      if (service === "uml") {
+        assistantText = "UML wizard started. First, select one or more diagram types, then continue.";
+      } else if (service === "readme") {
+        assistantText =
+          "For README generation, use the VS Code extension so it can access your project files directly and write the README into your repository.";
+      } else if (service === "architecture") {
+        assistantText = "Architecture discussion started. Describe your project in a few sentences.";
+      } else if (service === "recommendation") {
+        assistantText = "Recommendation discussion started. What decision or problem do you want help with?";
+      } else {
+        assistantText = "Tell me what coding or software engineering help you need.";
+      }
+      const nextMessages = [...conversation.messages, { role: "assistant", content: assistantText } as Msg];
+      return { ...conversation, flow: nextFlow, messages: nextMessages, title: buildConversationTitle(nextMessages) };
+    });
+  };
+
+  const toggleDiagramType = (diagramType: string) => {
+    if (!activeConversation || activeConversation.flow.stage !== "uml") return;
+    updateConversation(activeConversation.id, (conversation) => {
+      const selected = conversation.flow.uml.diagramTypes.includes(diagramType)
+        ? conversation.flow.uml.diagramTypes.filter((item) => item !== diagramType)
+        : [...conversation.flow.uml.diagramTypes, diagramType];
+      return {
+        ...conversation,
+        flow: { ...conversation.flow, uml: { ...conversation.flow.uml, diagramTypes: selected } },
+      };
+    });
+  };
+
+  const continueUmlWizard = () => {
+    if (!activeConversation || activeConversation.flow.stage !== "uml" || isLoading) return;
+    const uml = activeConversation.flow.uml;
+    if (uml.step === "diagramTypes") {
+      if (uml.diagramTypes.length === 0) {
+        appendAssistant(activeConversation.id, "Select at least one diagram type before continuing.");
+        return;
+      }
       updateConversation(activeConversation.id, (conversation) => ({
         ...conversation,
-        messages: [
-          ...conversation.messages,
-          infoMsg,
-        ],
+        flow: { ...conversation.flow, uml: { ...conversation.flow.uml, step: "system" } },
+        messages: [...conversation.messages, { role: "assistant", content: "Describe the application and its main purpose." }],
+      }));
+      return;
+    }
+    if (uml.step === "extra") {
+      updateConversation(activeConversation.id, (conversation) => ({
+        ...conversation,
+        flow: { ...conversation.flow, uml: { ...conversation.flow.uml, step: "review" } },
+        messages: [...conversation.messages, { role: "assistant", content: "Review your inputs, then click Generate UML." }],
+      }));
+    }
+  };
+
+  const generateUml = async () => {
+    if (!activeConversation || activeConversation.flow.stage !== "uml" || isLoading) return;
+    const uml = activeConversation.flow.uml;
+    if (!uml.systemDescription.trim()) {
+      appendAssistant(activeConversation.id, "Missing information: please describe the application first.");
+      updateConversation(activeConversation.id, (conversation) => ({
+        ...conversation,
+        flow: { ...conversation.flow, uml: { ...conversation.flow.uml, step: "system" } },
+      }));
+      return;
+    }
+    if (!uml.actorsServices.trim()) {
+      appendAssistant(activeConversation.id, "Missing information: please describe actors/services and their roles.");
+      updateConversation(activeConversation.id, (conversation) => ({
+        ...conversation,
+        flow: { ...conversation.flow, uml: { ...conversation.flow.uml, step: "actors" } },
       }));
       return;
     }
 
-    const candidateIntake: IntakeState = {
-      ...activeConversation.intake,
-      goal: selectedGoal,
-      step: "details",
+    const payload = {
+      type: "uml",
+      prompt: "Generate UML diagrams from collected wizard inputs.",
+      context: "",
+      intake: {
+        diagramTypes: uml.diagramTypes,
+        systemDescription: uml.systemDescription,
+        actorsServices: uml.actorsServices,
+        extraInfo: uml.extraInfo,
+      },
     };
-    const missing = assessMissingInfo(candidateIntake);
-    if (missing.length > 0) {
-      const followUp: Msg = {
-        role: "assistant",
-        content: `Quick boost before I generate **${goalLabel(selectedGoal)}**:\n\n- ${missing.join("\n- ")}\n\nNo worries if you’re unsure — I’ll continue with assumptions now.`,
-      };
-      const updatedConversation: ConversationSession = {
-        ...activeConversation,
-        messages: [...activeConversation.messages, followUp],
-        intake: candidateIntake,
-        updatedAt: Date.now(),
-      };
+
+    setIsLoading(true);
+    try {
+      const data = await callAnalyze(payload);
+      const result = typeof data.result === "string" ? data.result : "No UML output returned.";
       updateConversation(activeConversation.id, (conversation) => ({
         ...conversation,
-        intake: candidateIntake,
-        messages: [
-          ...conversation.messages,
-          followUp,
-        ],
+        flow: { ...conversation.flow, uml: { ...conversation.flow.uml, step: "done" } },
+        messages: [...conversation.messages, { role: "assistant", content: result }],
       }));
-      await generateGoalOutput(updatedConversation, candidateIntake, missing);
-      return;
+    } catch (err) {
+      appendAssistant(activeConversation.id, `UML generation failed:\n\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsLoading(false);
     }
-
-    await generateGoalOutput(activeConversation, candidateIntake);
   };
 
   const send = async () => {
     if (!activeConversation || isLoading) return;
     const text = input.trim();
     if (!text) return;
-    const activeId = activeConversation.id;
-    const intake = activeConversation.intake;
     setInput("");
 
-    if (intake.step === "goal") {
-      const reminder: Msg = {
-        role: "assistant",
-        content: "Use the dropdown to choose the goal, then click **Continue** — I’ll handle the rest 🙂",
-      };
-      updateConversation(activeId, (conversation) => ({
+    const conversationId = activeConversation.id;
+    const flow = activeConversation.flow;
+
+    if (flow.stage === "service") {
+      appendAssistant(conversationId, "Pick one service card first.");
+      return;
+    }
+
+    if (flow.stage === "readme") {
+      updateConversation(conversationId, (conversation) => ({
         ...conversation,
         messages: [
           ...conversation.messages,
-          reminder,
+          { role: "user", content: text },
+          {
+            role: "assistant",
+            content: "README generation in this page is disabled by design. Open the VS Code extension and request README generation there.",
+          },
         ],
       }));
       return;
     }
 
-    const userMsg: Msg = { role: "user", content: text };
-
-    if (intake.step === "projectIdea") {
-      updateConversation(activeId, (conversation) => {
-        const stepMessage: Msg = {
-          role: "assistant",
-          content:
-            "Great start 🙌 Now pick the goal from the dropdown: **README**, **Architecture**, **UML diagrams**, or **Recommendations**.",
-        };
-        const nextMessages: Msg[] = [
-          ...conversation.messages,
-          userMsg,
-          stepMessage,
-        ];
-        return {
+    if (flow.stage === "uml") {
+      const userMsg: Msg = { role: "user", content: text };
+      if (flow.uml.step === "system") {
+        updateConversation(conversationId, (conversation) => ({
           ...conversation,
-          messages: nextMessages,
-          intake: {
-            ...conversation.intake,
-            step: "goal",
-            projectIdea: text,
+          messages: [...conversation.messages, userMsg, { role: "assistant", content: "Now list the actors/services and their key interactions." }],
+          flow: { ...conversation.flow, uml: { ...conversation.flow.uml, systemDescription: text, step: "actors" } },
+        }));
+        return;
+      }
+      if (flow.uml.step === "actors") {
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [...conversation.messages, userMsg, { role: "assistant", content: "Add any further information, or click Continue to skip this optional step." }],
+          flow: { ...conversation.flow, uml: { ...conversation.flow.uml, actorsServices: text, step: "extra" } },
+        }));
+        return;
+      }
+      if (flow.uml.step === "extra") {
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [...conversation.messages, userMsg, { role: "assistant", content: "Thanks. Review and click Generate UML when ready." }],
+          flow: { ...conversation.flow, uml: { ...conversation.flow.uml, extraInfo: text, step: "review" } },
+        }));
+        return;
+      }
+      if (flow.uml.step === "review" || flow.uml.step === "done") {
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [...conversation.messages, userMsg, { role: "assistant", content: "Revision noted. Click Generate UML to produce updated diagrams." }],
+          flow: {
+            ...conversation.flow,
+            uml: { ...conversation.flow.uml, extraInfo: `${conversation.flow.uml.extraInfo}\nRevision: ${text}`.trim(), step: "review" },
           },
-          title: buildConversationTitle(nextMessages),
-        };
-      });
+        }));
+        return;
+      }
+      appendAssistant(conversationId, "Use the UML wizard controls to continue.");
       return;
     }
 
-    if (intake.step === "details") {
-      const candidateIntake: IntakeState = {
-        ...intake,
-        details: [...intake.details, text],
-      };
-      const missing = assessMissingInfo(candidateIntake);
-      if (missing.length > 0) {
-        const followUp: Msg = {
-          role: "assistant",
-          content: `Great, I can already start. Optional extra details:\n\n- ${missing.join("\n- ")}\n\nIf you don’t have them, no problem — I’ll proceed with assumptions.`,
-        };
-        const updatedConversation: ConversationSession = {
-          ...activeConversation,
-          messages: [...activeConversation.messages, userMsg, followUp],
-          intake: candidateIntake,
-          updatedAt: Date.now(),
-        };
-        updateConversation(activeId, (conversation) => {
-          const nextMessages: Msg[] = [
-            ...conversation.messages,
-            userMsg,
-            followUp,
-          ];
-          return {
-            ...conversation,
-            messages: nextMessages,
-            intake: candidateIntake,
-            title: buildConversationTitle(nextMessages),
-          };
-        });
-        await generateGoalOutput(updatedConversation, candidateIntake, missing);
+    const userMsg: Msg = { role: "user", content: text };
+    updateConversation(conversationId, (conversation) => ({
+      ...conversation,
+      messages: [...conversation.messages, userMsg],
+    }));
+
+    if (flow.stage === "architecture") {
+      if (flow.architecture.stage === "project") {
+        if (text.length < 20) {
+          appendAssistant(conversationId, "Please provide a bit more detail about your project before we continue.");
+          return;
+        }
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          flow: {
+            ...conversation.flow,
+            architecture: { ...conversation.flow.architecture, projectSummary: text, stage: "services" },
+          },
+          messages: [...conversation.messages, { role: "assistant", content: "List the key services/components and what each does." }],
+        }));
+        return;
+      }
+      if (flow.architecture.stage === "services") {
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          flow: {
+            ...conversation.flow,
+            architecture: { ...conversation.flow.architecture, services: text, stage: "constraints" },
+          },
+          messages: [...conversation.messages, { role: "assistant", content: "Add constraints or priorities (scale, security, performance, budget, deployment)." }],
+        }));
         return;
       }
 
-      const updatedConversation: ConversationSession = {
-        ...activeConversation,
-        messages: [...activeConversation.messages, userMsg],
-        intake: candidateIntake,
-        updatedAt: Date.now(),
-      };
-      updateConversation(activeId, (conversation) => ({
-        ...conversation,
-        messages: [...conversation.messages, userMsg],
-        intake: candidateIntake,
-        title: buildConversationTitle([...conversation.messages, userMsg]),
-      }));
-      await generateGoalOutput(updatedConversation, candidateIntake);
+      setIsLoading(true);
+      try {
+        const current = conversations.find((item) => item.id === conversationId);
+        const conversationContext = buildContextFromMessages([...(current?.messages ?? []), userMsg]);
+        const data = await callAnalyze({
+          type: "architecture",
+          prompt: text,
+          context: conversationContext,
+          intake: {
+            projectSummary: flow.architecture.stage === "constraints" ? flow.architecture.projectSummary : flow.architecture.projectSummary,
+            services: flow.architecture.stage === "constraints" ? flow.architecture.services : flow.architecture.services,
+            constraints: flow.architecture.stage === "constraints" ? text : flow.architecture.constraints,
+          },
+        });
+        if (data.needs_more_info && typeof data.question === "string") {
+          appendAssistant(conversationId, data.question);
+        } else {
+          const reply = typeof data.result === "string" ? data.result : "No architecture response returned.";
+          updateConversation(conversationId, (conversation) => ({
+            ...conversation,
+            messages: [...conversation.messages, { role: "assistant", content: reply }],
+            flow: {
+              ...conversation.flow,
+              architecture: {
+                ...conversation.flow.architecture,
+                constraints: flow.architecture.stage === "constraints" ? text : conversation.flow.architecture.constraints,
+                stage: "chat",
+              },
+            },
+          }));
+        }
+      } catch (err) {
+        appendAssistant(conversationId, `Architecture request failed:\n\n${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 
-    const history = [...activeConversation.messages, userMsg];
-    updateConversation(activeId, (conversation) => ({
-      ...conversation,
-      messages: history,
-      title: buildConversationTitle(history),
-    }));
-    await sendToAssistant({
-      conversationId: activeId,
-      history,
-      anchorUserText: text,
-    });
+    if (flow.stage === "recommendation") {
+      if (flow.recommendation.stage === "problem") {
+        if (text.length < 15) {
+          appendAssistant(conversationId, "Please provide more detail about the decision/problem.");
+          return;
+        }
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          flow: { ...conversation.flow, recommendation: { ...conversation.flow.recommendation, problem: text, stage: "context" } },
+          messages: [...conversation.messages, { role: "assistant", content: "Share your project context and what you already tried." }],
+        }));
+        return;
+      }
+      if (flow.recommendation.stage === "context") {
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          flow: { ...conversation.flow, recommendation: { ...conversation.flow.recommendation, context: text, stage: "constraints" } },
+          messages: [...conversation.messages, { role: "assistant", content: "Add your constraints/trade-offs (time, budget, tooling, team size)." }],
+        }));
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const current = conversations.find((item) => item.id === conversationId);
+        const data = await callAnalyze({
+          type: "recommendation",
+          prompt: text,
+          context: buildContextFromMessages([...(current?.messages ?? []), userMsg]),
+          intake: {
+            problem: flow.recommendation.problem,
+            context: flow.recommendation.context,
+            constraints: flow.recommendation.stage === "constraints" ? text : flow.recommendation.constraints,
+          },
+        });
+        const reply = typeof data.result === "string" ? data.result : "No recommendation returned.";
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: [...conversation.messages, { role: "assistant", content: reply }],
+          flow: {
+            ...conversation.flow,
+            recommendation: {
+              ...conversation.flow.recommendation,
+              constraints: flow.recommendation.stage === "constraints" ? text : conversation.flow.recommendation.constraints,
+              stage: "chat",
+            },
+          },
+        }));
+      } catch (err) {
+        appendAssistant(conversationId, `Recommendation request failed:\n\n${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const current = conversations.find((item) => item.id === conversationId);
+      const data = await callAnalyze({
+        type: "other",
+        prompt: text,
+        context: buildContextFromMessages([...(current?.messages ?? []), userMsg]),
+      });
+      const reply = typeof data.result === "string" ? data.result : "No response returned.";
+      appendAssistant(conversationId, reply);
+    } catch (err) {
+      appendAssistant(conversationId, `Request failed:\n\n${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const startNewChat = () => {
@@ -554,14 +603,21 @@ const AgentPage = () => {
     setInput("");
   };
 
-  const updateGoalSelection = (goal: string) => {
-    if (!activeConversation) return;
-    const normalized = normalizeGoal(goal);
-    if (!normalized) return;
-    updateConversation(activeConversation.id, (conversation) => ({
-      ...conversation,
-      intake: { ...conversation.intake, goal: normalized },
-    }));
+  const deleteConversation = (conversationId: string) => {
+    if (isLoading) return;
+    const conversation = conversations.find((item) => item.id === conversationId);
+    const confirmed = window.confirm(`Delete "${conversation?.title ?? "this discussion"}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    const nextConversations = removeConversationById(conversations, conversationId);
+    if (nextConversations.length === 0) {
+      const fresh = createConversation();
+      setConversations([fresh]);
+      setActiveConversationId(fresh.id);
+      return;
+    }
+    setConversations(nextConversations);
+    if (activeConversationId === conversationId) setActiveConversationId(nextConversations[0].id);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -575,148 +631,229 @@ const AgentPage = () => {
     ? previewImageUrl.split("/").pop()?.split("?")[0] || "diagram.png"
     : "diagram.png";
 
-  const inputPlaceholder = activeConversation?.intake.step === "projectIdea"
-    ? "Describe your project idea (rough is okay)..."
-    : activeConversation?.intake.step === "details"
-      ? "Share any extra details you know (I can infer the rest)..."
-      : activeConversation?.intake.step === "goal"
-        ? "Select a goal below to continue..."
-        : "Continue the discussion...";
+  const flow = activeConversation?.flow;
+  const canEnterDiscussionText = flow
+    ? flow.stage === "other"
+      || flow.stage === "architecture"
+      || flow.stage === "recommendation"
+      || (flow.stage === "uml" && flow.uml.step !== "diagramTypes")
+    : false;
+  const inputPlaceholder = !canEnterDiscussionText
+    ? undefined
+    : flow?.stage === "uml"
+      ? flow.uml.step === "system"
+        ? "Describe the application..."
+        : flow.uml.step === "actors"
+          ? "Describe actors/services and interactions..."
+          : flow.uml.step === "extra"
+            ? "Optional: add further details..."
+            : "Add revisions or notes..."
+      : "Type your message...";
+  const isSendDisabled = isLoading || !input.trim() || !canEnterDiscussionText;
+  const isServiceSelectionStep = flow?.stage === "service";
+  const isUmlDiagramSelectionStep = flow?.stage === "uml" && flow.uml.step === "diagramTypes";
+  const useCenteredSelectionLayout = isServiceSelectionStep || isUmlDiagramSelectionStep;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
-      <div className="border-b border-border px-4 py-3 flex items-center justify-between">
+    <div className="flex h-[calc(100vh-4rem)] flex-col bg-background">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-primary" />
           <h1 className="font-semibold text-foreground">DevAssist AI Agent</h1>
         </div>
         <Button variant="ghost" size="sm" onClick={startNewChat} disabled={isLoading}>
-          <Plus className="h-4 w-4 mr-1" /> New Chat
+          <Plus className="mr-1 h-4 w-4" /> New Chat
         </Button>
       </div>
 
-      <div className="border-b border-border px-4 py-2 overflow-x-auto">
-        <div className="flex items-center gap-2 min-w-max">
+      <div className="overflow-x-auto border-b border-border px-4 py-2">
+        <div className="flex min-w-max items-center gap-2">
           {conversations.map((conversation) => (
-            <Button
-              key={conversation.id}
-              variant={conversation.id === activeConversationId ? "default" : "outline"}
-              size="sm"
-              onClick={() => setActiveConversationId(conversation.id)}
-              disabled={isLoading && conversation.id !== activeConversationId}
-              className="max-w-[260px] truncate"
-              title={conversation.title}
-            >
-              {conversation.title}
-            </Button>
+            <div key={conversation.id} className="flex items-center gap-1">
+              <Button
+                variant={conversation.id === activeConversationId ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveConversationId(conversation.id)}
+                disabled={isLoading && conversation.id !== activeConversationId}
+                className="max-w-[220px] truncate"
+                title={conversation.title}
+              >
+                {conversation.title}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => deleteConversation(conversation.id)}
+                disabled={isLoading}
+                title="Delete discussion"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           ))}
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {visibleMessages.map((msg, i) => (
-          <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            {msg.role === "assistant" && (
-              <div className="flex-shrink-0 h-8 w-8 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-                <Bot className="h-4 w-4" />
-              </div>
-            )}
-            <Card
-              className={`max-w-[75%] px-4 py-3 ${
-                msg.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-card text-card-foreground"
-              }`}
-            >
-              <div className="prose prose-sm max-w-none dark:prose-invert text-inherit">
-                <ReactMarkdown
-                  components={{
-                    img: ({ src, alt }) => {
-                      const resolvedSrc = resolveMediaUrl(src);
-                      if (!resolvedSrc) return null;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewImageUrl(resolvedSrc)}
-                          className="block w-full text-left"
-                          title="Open image preview"
-                        >
-                          <img src={resolvedSrc} alt={alt ?? "Diagram"} className="max-w-full rounded-md border border-border" />
-                        </button>
-                      );
-                    },
-                    a: ({ href, children }) => {
-                      const resolvedHref = resolveMediaUrl(href) ?? href ?? "#";
-                      return (
-                        <a href={resolvedHref} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-                          {children}
-                        </a>
-                      );
-                    },
-                  }}
-                >
-                  {msg.content}
-                </ReactMarkdown>
-              </div>
-            </Card>
-            {msg.role === "user" && (
-              <div className="flex-shrink-0 h-8 w-8 rounded-md bg-secondary text-secondary-foreground flex items-center justify-center">
-                <User className="h-4 w-4" />
-              </div>
-            )}
-          </div>
-        ))}
-        {isLoading && visibleMessages[visibleMessages.length - 1]?.role === "user" && (
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 h-8 w-8 rounded-md bg-primary/10 text-primary flex items-center justify-center">
-              <Bot className="h-4 w-4" />
-            </div>
-            <Card className="bg-card text-card-foreground px-4 py-3">
-              <Loader2 className="h-4 w-4 animate-spin" />
-            </Card>
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-border p-4">
-        <div className="container mx-auto max-w-3xl space-y-3">
-          {activeConversation?.intake.step === "goal" && (
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Select value={activeConversation.intake.goal} onValueChange={updateGoalSelection}>
-                <SelectTrigger className="sm:flex-1">
-                  <SelectValue placeholder="Select discussion goal" />
-                </SelectTrigger>
-                <SelectContent>
-                  {GOAL_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
+      {useCenteredSelectionLayout ? (
+        <div className="flex flex-1 items-center justify-center px-4 py-6">
+          <div className="w-full max-w-5xl space-y-6">
+            {isServiceSelectionStep && (
+              <div className="mx-auto w-full max-w-4xl space-y-4">
+                <div className="text-center text-sm text-muted-foreground">Choose a service to continue.</div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {SERVICE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => chooseService(option.value)}
+                      className="min-h-[120px] rounded-lg border border-border bg-card p-5 text-left transition hover:border-primary/50 hover:bg-accent/20"
+                    >
+                      <div className="text-base font-semibold text-foreground">{option.label}</div>
+                      <div className="mt-2 text-sm text-muted-foreground">{option.hint}</div>
+                    </button>
                   ))}
-                </SelectContent>
-              </Select>
-              <Button onClick={() => void confirmGoal()} disabled={!activeConversation.intake.goal || isLoading}>
-                Continue
-              </Button>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={inputPlaceholder}
-              className="min-h-[48px] max-h-[160px] resize-none"
-              rows={1}
-            />
-            <Button onClick={() => void send()} disabled={isLoading || !input.trim()} size="icon" className="h-12 w-12 flex-shrink-0">
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            </Button>
+                </div>
+              </div>
+            )}
+
+            {isUmlDiagramSelectionStep && (
+              <Card className="mx-auto w-full max-w-4xl space-y-5 border border-border p-6">
+                <div className="space-y-1 text-center">
+                  <div className="text-base font-semibold">UML wizard</div>
+                  <div className="text-sm text-muted-foreground">Select one or more diagram types:</div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {UML_DIAGRAM_TYPES.map((diagramType) => {
+                    const selected = flow.uml.diagramTypes.includes(diagramType);
+                    return (
+                      <Button
+                        key={diagramType}
+                        variant={selected ? "default" : "outline"}
+                        size="lg"
+                        className="h-14 justify-start px-4 text-sm capitalize"
+                        onClick={() => toggleDiagramType(diagramType)}
+                      >
+                        {diagramType}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-center">
+                  <Button onClick={continueUmlWizard} size="lg" disabled={isLoading}>Continue</Button>
+                </div>
+              </Card>
+            )}
           </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-6">
+            {visibleMessages.map((msg, i) => (
+              <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                {msg.role === "assistant" && (
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Bot className="h-4 w-4" />
+                  </div>
+                )}
+                <Card className={`max-w-[75%] px-4 py-3 ${msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground"}`}>
+                  <div className="prose prose-sm max-w-none text-inherit dark:prose-invert">
+                    <ReactMarkdown
+                      components={{
+                        img: ({ src, alt }) => {
+                          const resolvedSrc = resolveMediaUrl(src);
+                          if (!resolvedSrc) return null;
+                          return (
+                            <button type="button" onClick={() => setPreviewImageUrl(resolvedSrc)} className="block w-full text-left" title="Open image preview">
+                              <img src={resolvedSrc} alt={alt ?? "Diagram"} className="max-w-full rounded-md border border-border" />
+                            </button>
+                          );
+                        },
+                        a: ({ href, children }) => {
+                          const resolvedHref = resolveMediaUrl(href) ?? href ?? "#";
+                          return (
+                            <a href={resolvedHref} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                              {children}
+                            </a>
+                          );
+                        },
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                </Card>
+                {msg.role === "user" && (
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+                    <User className="h-4 w-4" />
+                  </div>
+                )}
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex gap-3">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Bot className="h-4 w-4" />
+                </div>
+                <Card className="bg-card px-4 py-3 text-card-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </Card>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border p-4 transition-all duration-200 ease-out">
+            <div className="container mx-auto max-w-3xl space-y-3">
+              {flow?.stage === "uml" && (
+                <Card className="space-y-3 border border-border p-3">
+                  <div className="text-sm font-medium">UML wizard</div>
+                  {flow.uml.step === "extra" && (
+                    <div className="flex gap-2">
+                      <Button onClick={continueUmlWizard} variant="outline" disabled={isLoading}>Skip optional step</Button>
+                    </div>
+                  )}
+                  {flow.uml.step === "review" && (
+                    <div className="space-y-2">
+                      <div className="rounded-md border border-border bg-muted/30 p-2 text-sm">
+                        <div><strong>Diagram types:</strong> {flow.uml.diagramTypes.join(", ") || "none"}</div>
+                        <div className="mt-1"><strong>App summary:</strong> {flow.uml.systemDescription || "missing"}</div>
+                        <div className="mt-1"><strong>Actors/services:</strong> {flow.uml.actorsServices || "missing"}</div>
+                        <div className="mt-1"><strong>Further info:</strong> {flow.uml.extraInfo || "none"}</div>
+                      </div>
+                      <Button onClick={() => void generateUml()} disabled={isLoading}>Generate UML</Button>
+                    </div>
+                  )}
+                </Card>
+              )}
+
+              {flow?.stage === "readme" && (
+                <Card className="border border-border p-3 text-sm text-muted-foreground">
+                  README generation is available in the VS Code extension only. Open the extension panel and request README generation there.
+                </Card>
+              )}
+
+              {canEnterDiscussionText && (
+                <div className="flex gap-2 transition-all duration-200 ease-out">
+                  <Textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={inputPlaceholder}
+                    className="min-h-[48px] max-h-[160px] resize-none"
+                    rows={1}
+                  />
+                  <Button onClick={() => void send()} disabled={isSendDisabled} size="icon" className="h-12 w-12 flex-shrink-0">
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <Dialog open={Boolean(previewImageUrl)} onOpenChange={(open) => !open && setPreviewImageUrl(null)}>
-        <DialogContent className="max-w-[96vw] w-[1000px] p-4">
+        <DialogContent className="w-[1000px] max-w-[96vw] p-4">
           <DialogTitle className="text-sm">Diagram preview</DialogTitle>
           {previewImageUrl && (
             <div className="space-y-3">
@@ -726,13 +863,13 @@ const AgentPage = () => {
               <div className="flex items-center gap-2">
                 <Button asChild size="sm">
                   <a href={previewImageUrl} download={previewImageName}>
-                    <Download className="h-4 w-4 mr-1" />
+                    <Download className="mr-1 h-4 w-4" />
                     Download image
                   </a>
                 </Button>
                 <Button asChild size="sm" variant="outline">
                   <a href={previewImageUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-4 w-4 mr-1" />
+                    <ExternalLink className="mr-1 h-4 w-4" />
                     Open in new tab
                   </a>
                 </Button>

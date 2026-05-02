@@ -20,6 +20,15 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand('aiDevAssistant.explainSelection', async () => {
+      await vscode.commands.executeCommand('aiDevAssistant.panel.focus');
+      setTimeout(() => {
+        provider.triggerExplainSelection();
+      }, 120);
+    })
+  );
+
   
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor((editor) => {

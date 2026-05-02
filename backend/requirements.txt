@@ -13,3 +13,5 @@ plantuml>=0.3.0
 six
 # MCP 
 mcp>=0.1.0
+fastmcp>=0.2.0
+google-generativeai>=0.8.0

@@ -80,7 +80,7 @@ const ExtensionPage = () => {
 
   const handleDownload = async () => {
     try {
-      const response = await fetch("/ai-dev-assistant-0.0.1.vsix", {
+      const response = await fetch("/mon-extension.vsix", {
         headers: {
           Accept: "application/octet-stream",
         },
@@ -93,7 +93,7 @@ const ExtensionPage = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "ai-dev-assistant-0.0.1.vsix";
+      a.download = "ai-dev-assistant.vsix";
       document.body.appendChild(a);
       a.click();
       a.remove();

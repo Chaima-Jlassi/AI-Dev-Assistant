@@ -9,7 +9,12 @@ from llm.ollama_client import get_client
 _PROMPT_TEMPLATE = """\
 You are a senior software engineer and educator.
 
-Explain the following source code clearly and thoroughly for a developer who has not seen it before.
+Explain the following source code for a {detail_level} level audience.
+
+Use this level of depth:
+- low: concise, high-level overview with the main flow
+- medium: balanced explanation with key components and flow
+- high: detailed explanation with flow, decisions, edge cases, and improvements
 
 Structure your explanation with these sections:
 
@@ -43,21 +48,38 @@ SOURCE CODE:
 """
 
 
+def _resolve_detail_level(value: str) -> str:
+    if value in {"low", "medium", "high"}:
+        return value
+    return "medium"
+
+
+def _resolve_output_name(output_name: str, detail_level: str) -> str:
+    if output_name in {"low", "medium", "high"}:
+        return f"{detail_level}.md"
+    if not output_name.lower().endswith(".md"):
+        return f"{output_name}.md"
+    return output_name
+
+
 def explain_code(code: str, output_name: str = "explanation.md") -> Optional[str]:
     """
     Produce a structured explanation of source code.
 
     Args:
         code:        Raw source code.
-        output_name: Filename saved under outputs/explanations/.
+        output_name: Filename saved under outputs/explanations/ or a detail level
+                     shorthand (low | medium | high).
 
     Returns:
-        Absolute path to the saved file, or None on failure.
+        The generated explanation text, or None on failure.
     """
     from config import CONFIG
 
     client = get_client()
-    prompt = _PROMPT_TEMPLATE.format(code=code)
+    detail_level = _resolve_detail_level(output_name)
+    file_name = _resolve_output_name(output_name, detail_level)
+    prompt = _PROMPT_TEMPLATE.format(code=code, detail_level=detail_level)
 
     logger.info("Generating code explanation …")
     try:
@@ -66,11 +88,11 @@ def explain_code(code: str, output_name: str = "explanation.md") -> Optional[str
         logger.error(f"Explanation generation failed: {e}")
         return None
 
-    out_path = Path(CONFIG.outputs.explanations_dir) / output_name
+    out_path = Path(CONFIG.outputs.explanations_dir) / file_name
     try:
         out_path.write_text(response, encoding="utf-8")
         logger.info(f"Explanation saved → {out_path}")
-        return str(out_path.absolute())
+        return response
     except Exception as e:
         logger.error(f"Failed to save explanation: {e}")
         return None

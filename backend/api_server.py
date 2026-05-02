@@ -103,6 +103,64 @@ def _extract_text_result(result: dict, fields: tuple[str, ...], default_error: s
     return "", default_error
 
 
+def _normalize_diagram_types(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    allowed = {"auto", "class", "sequence", "activity", "component", "use-case", "state", "deployment", "erd"}
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        cleaned = item.strip().lower()
+        if cleaned in allowed and cleaned not in normalized:
+            normalized.append(cleaned)
+    return normalized
+
+
+def _conversation_to_text(value, max_messages: int = 12) -> str:
+    if not isinstance(value, list):
+        return ""
+    chunks: list[str] = []
+    for item in value[-max_messages:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip().lower()
+        content = str(item.get("content", "")).strip()
+        if role in {"user", "assistant"} and content:
+            chunks.append(f"{role}: {content}")
+    return "\n".join(chunks)
+
+
+def _runtime_guidance(error_text: str, *, feature: str) -> str:
+    message = (error_text or "").strip()
+    lower = message.lower()
+
+    if "gemini_api_key is required" in lower or "google_api_key" in lower:
+        return (
+            f"{feature} is temporarily unavailable because Gemini API credentials are missing.\n\n"
+            "Set the key and restart the backend:\n"
+            "1) `$env:GEMINI_API_KEY=\"<your-key>\"`\n"
+            "2) `python api_server.py`\n\n"
+            f"Technical details: {message}"
+        )
+
+    if "cannot connect to ollama" in lower:
+        return (
+            f"{feature} is temporarily unavailable because Ollama is not reachable.\n\n"
+            "Start Ollama and confirm the endpoint is up:\n"
+            "1) `ollama serve`\n"
+            "2) `curl http://localhost:11434/api/tags`\n"
+            "3) `python -m mcp_tools.server --mode http --port 8001`\n"
+            "4) `python api_server.py`\n\n"
+            f"Technical details: {message}"
+        )
+
+    return (
+        f"{feature} is temporarily unavailable due to a runtime dependency issue.\n\n"
+        f"Technical details: {message or 'unknown error'}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Static — serve rendered diagram images
 # ---------------------------------------------------------------------------
@@ -221,64 +279,154 @@ def analyze():
     tool_type = str(payload.get("type", "")).strip().lower()
     prompt = str(payload.get("prompt", "")).strip()
     context = _compact_context(str(payload.get("context", "")).strip())
+    intake = payload.get("intake") if isinstance(payload.get("intake"), dict) else {}
+    conversation_text = _conversation_to_text(payload.get("conversation", []))
 
     if not tool_type:
         return jsonify({"error": "type is required"}), 400
 
-    mcp = _get_mcp()
-    combined = f"{prompt}\n\nContext:\n{context}".strip()
-
     try:
         if tool_type == "uml":
-            result = mcp.generate_uml_diagram(
-                description=combined,
-                diagram_type="auto",
-                count=1
-            )
-            if not result.get("success"):
-                return jsonify({"error": result.get("error", "diagram generation failed")}), 500
-            return jsonify({"result": _diagrams_to_markdown(result.get("diagrams", []))})
+            mcp = _get_mcp()
+            diagram_types = _normalize_diagram_types(intake.get("diagramTypes", []))
+            system_description = str(intake.get("systemDescription", "")).strip()
+            actors_services = str(intake.get("actorsServices", "")).strip()
+            extra_info = str(intake.get("extraInfo", "")).strip()
+
+            missing: list[str] = []
+            if not diagram_types:
+                missing.append("diagram types")
+            if not system_description:
+                missing.append("application description")
+            if not actors_services:
+                missing.append("actors/services")
+            if missing:
+                return jsonify({
+                    "needs_more_info": True,
+                    "question": f"Please provide missing UML input: {', '.join(missing)}.",
+                })
+
+            description = "\n\n".join(filter(None, [
+                f"User request: {prompt}" if prompt else "",
+                f"Application description:\n{system_description}",
+                f"Actors and services:\n{actors_services}",
+                f"Further information:\n{extra_info}" if extra_info else "",
+                f"Additional context:\n{context}" if context else "",
+                f"Conversation:\n{conversation_text}" if conversation_text else "",
+            ])).strip()
+
+            all_diagrams = []
+            failures: list[str] = []
+            for diagram_type in diagram_types:
+                result = mcp.generate_uml_diagram(
+                    description=description,
+                    diagram_type=diagram_type,
+                    count=1
+                )
+                if result.get("success"):
+                    all_diagrams.extend(result.get("diagrams", []))
+                else:
+                    error_msg = str(result.get("error", "unknown UML generation error"))
+                    failures.append(f"{diagram_type}: {error_msg}")
+                    logger.error(f"UML generation failed for type={diagram_type}: {error_msg}")
+
+            if not all_diagrams:
+                merged_failure = "; ".join(failures) if failures else "diagram generation failed for all selected diagram types"
+                return jsonify({"result": _runtime_guidance(merged_failure, feature="UML generation")})
+            return jsonify({"result": _diagrams_to_markdown(all_diagrams)})
 
         if tool_type == "readme":
-            readme_text = _get_gemini().generate_readme(
-                code=combined,
-                project_name="",
-                language="auto",
-                description=prompt,
-            )
-            if not str(readme_text).strip():
-                return jsonify({"error": "readme generation returned empty output"}), 500
-            return jsonify({"result": readme_text})
+            return jsonify({
+                "result": (
+                    "README generation is available from the VS Code extension only. "
+                    "Please open the extension panel and request README generation there so the tool can access your project context directly."
+                )
+            })
 
         if tool_type == "tests":
+            mcp = _get_mcp()
+            combined = f"{prompt}\n\nContext:\n{context}".strip()
             result = mcp.generate_unit_tests(code=combined, language="python")
             if not result.get("success"):
                 return jsonify({"error": result.get("error", "test generation failed")}), 500
             return jsonify({"result": result.get("content", "")})
 
         if tool_type == "architecture":
-            architecture_text = _get_gemini().generate_architecture(
-                code=combined,
-                project_name="",
-                language="auto",
-                description=prompt,
-            )
+            project_summary = str(intake.get("projectSummary", "")).strip()
+            services = str(intake.get("services", "")).strip()
+            constraints = str(intake.get("constraints", "")).strip()
+            if not project_summary:
+                return jsonify({"needs_more_info": True, "question": "Please describe your project before requesting architecture suggestions."})
+            if not services:
+                return jsonify({"needs_more_info": True, "question": "Please list your main services/components and responsibilities."})
+            if not constraints:
+                return jsonify({"needs_more_info": True, "question": "Please add constraints or priorities (scale, security, performance, deployment, budget)."})
+
+            combined = "\n\n".join(filter(None, [
+                f"Latest request: {prompt}",
+                f"Project summary:\n{project_summary}",
+                f"Services/components:\n{services}",
+                f"Constraints/priorities:\n{constraints}",
+                f"Conversation context:\n{conversation_text}" if conversation_text else "",
+                f"Additional context:\n{context}" if context else "",
+            ])).strip()
+            try:
+                architecture_text = _get_gemini().generate_architecture(
+                    code=combined,
+                    project_name="",
+                    language="auto",
+                    description="Architecture suggestions based on structured intake + ongoing discussion",
+                )
+            except Exception as exc:
+                logger.error(f"Architecture generation dependency failure: {exc}")
+                return jsonify({"result": _runtime_guidance(str(exc), feature="Architecture suggestions")})
             if not str(architecture_text).strip():
                 return jsonify({"error": "architecture generation returned empty output"}), 500
             return jsonify({"result": architecture_text})
 
         if tool_type == "recommendation":
-            recommendation_text = _get_gemini().generate_recommendation(
-                code=combined,
-                project_name="",
-                language="auto",
-                description=prompt,
-            )
+            problem = str(intake.get("problem", "")).strip()
+            recommendation_context = str(intake.get("context", "")).strip()
+            constraints = str(intake.get("constraints", "")).strip()
+            combined = "\n\n".join(filter(None, [
+                f"Latest request: {prompt}",
+                f"Problem/decision:\n{problem}" if problem else "",
+                f"Project context:\n{recommendation_context}" if recommendation_context else "",
+                f"Constraints/trade-offs:\n{constraints}" if constraints else "",
+                f"Conversation context:\n{conversation_text}" if conversation_text else "",
+                f"Additional context:\n{context}" if context else "",
+            ])).strip()
+            try:
+                recommendation_text = _get_gemini().generate_recommendation(
+                    code=combined,
+                    project_name="",
+                    language="auto",
+                    description="Practical recommendation in discussion mode",
+                )
+            except Exception as exc:
+                logger.error(f"Recommendation generation dependency failure: {exc}")
+                return jsonify({"result": _runtime_guidance(str(exc), feature="Recommendations")})
             if not str(recommendation_text).strip():
                 return jsonify({"error": "recommendation generation returned empty output"}), 500
             return jsonify({"result": recommendation_text})
 
+        if tool_type == "other":
+            try:
+                other_text = _get_gemini().generate_other(
+                    question=prompt,
+                    context=conversation_text,
+                    extra_context=context,
+                )
+            except Exception as exc:
+                logger.error(f"Other generation dependency failure: {exc}")
+                return jsonify({"result": _runtime_guidance(str(exc), feature="General guidance")})
+            if not str(other_text).strip():
+                return jsonify({"error": "other generation returned empty output"}), 500
+            return jsonify({"result": other_text})
+
         if tool_type in ("explain", "review"):
+            mcp = _get_mcp()
+            combined = f"{prompt}\n\nContext:\n{context}".strip()
             level = "high" if tool_type == "review" else "medium"
             result = mcp.explain_code(code=combined, detail_level=level)
             output, explain_error = _extract_text_result(

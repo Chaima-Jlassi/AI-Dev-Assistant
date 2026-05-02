@@ -27,11 +27,8 @@ out/
 # -----------------------------
 # Local setup / environments
 # -----------------------------
-
-<<<<<<< HEAD
-
-=======
->>>>>>> c12616687a50b747830457961e0a61641e8cdede
+.env
+.env.local
 **/__pycache__/
 **/.dockerignore
 .venv/
@@ -50,11 +47,6 @@ env/
 # .idea/
 server/.env
 server/node_modules
-.venv
-<<<<<<< HEAD
-=======
-
->>>>>>> c12616687a50b747830457961e0a61641e8cdede
 /backend/node_modules
 integration.md
 

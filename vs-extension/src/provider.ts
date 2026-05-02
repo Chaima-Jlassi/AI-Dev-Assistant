@@ -44,6 +44,13 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
         case 'insertText':
           await this._insertTextToEditor(message.text);
           break;
+        case 'writeFile':
+          await this._writeFile(
+            message.relativePath,
+            message.content,
+            !!message.confirmReplace
+          );
+          break;
         case 'callBackend':
           await this._callBackend(message.endpoint, message.payload, message.requestId);
           break;
@@ -95,6 +102,35 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
       command: 'fileSaved',
       fileName: path.basename(doc.fileName),
       filePath: doc.fileName
+    });
+  }
+
+  // ── Trigger explain from command palette / shortcut ──────────────
+  public async triggerExplainSelection() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || !this._view) {
+      vscode.window.showWarningMessage('Open a file and select code first.');
+      return;
+    }
+
+    const selection = editor.selection;
+    if (selection.isEmpty) {
+      vscode.window.showWarningMessage('Select code first, then run Explain Selected Code.');
+      return;
+    }
+
+    const text = editor.document.getText(selection);
+    if (!text.trim()) {
+      vscode.window.showWarningMessage('Selected code is empty.');
+      return;
+    }
+
+    const lines = selection.end.line - selection.start.line + 1;
+    this._view.webview.postMessage({
+      command: 'triggerExplainSelection',
+      text,
+      lines,
+      fileName: path.basename(editor.document.fileName)
     });
   }
 
@@ -171,11 +207,46 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
     vscode.window.showInformationMessage('Inserted into editor.');
   }
 
+  // ── Write file in workspace (README flow) ────────────────────────
+  private async _writeFile(relativePath: string, content: string, confirmReplace: boolean) {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      vscode.window.showErrorMessage('No workspace folder is open.');
+      return;
+    }
+
+    const targetUri = vscode.Uri.joinPath(folder.uri, relativePath || 'README.md');
+    const exists = fs.existsSync(targetUri.fsPath);
+
+    if (exists && confirmReplace) {
+      const decision = await vscode.window.showWarningMessage(
+        `${relativePath} already exists. Replace it?`,
+        { modal: true },
+        'Replace'
+      );
+      if (decision !== 'Replace') {
+        vscode.window.showInformationMessage('README replace canceled.');
+        return;
+      }
+    }
+
+    try {
+      const data = Buffer.from(content, 'utf-8');
+      await vscode.workspace.fs.writeFile(targetUri, data);
+      const doc = await vscode.workspace.openTextDocument(targetUri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+      vscode.window.showInformationMessage(`${relativePath} updated successfully.`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown write error';
+      vscode.window.showErrorMessage(`Failed to write ${relativePath}: ${msg}`);
+    }
+  }
+
   // ── Proxy backend call (avoids CORS) ──────────────
   private async _callBackend(endpoint: string, payload: unknown, requestId: string) {
     if (!this._view) return;
     const config = vscode.workspace.getConfiguration('aiDevAssistant');
-    const backendUrl = config.get<string>('backendUrl') || 'http://localhost:8000';
+    const backendUrl = config.get<string>('backendUrl') || 'http://localhost:18000';
 
     try {
       const http = await import('node:http');
@@ -183,13 +254,16 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
       const url = new URL(endpoint, backendUrl);
       const body = JSON.stringify(payload);
 
+      const method = endpoint === '/health' ? 'GET' : 'POST';
       const options = {
-        method: endpoint === '/health' ? 'GET' : 'POST',
+        method,
         headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
+          'Content-Type': 'application/json'
         }
       };
+      if (method === 'POST') {
+        (options.headers as Record<string, number | string>)['Content-Length'] = Buffer.byteLength(body);
+      }
 
       const lib = url.protocol === 'https:' ? https : http;
 
@@ -200,7 +274,7 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
           res.on('end', () => resolve(data));
         });
         req.on('error', reject);
-        if (options.method === 'POST') req.write(body);
+          if (method === 'POST') req.write(body);
         req.end();
       });
 

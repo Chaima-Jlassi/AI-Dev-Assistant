@@ -1,6 +1,4 @@
-=========================================================
    GUIDE : CRÉER ET INSTALLER MON-EXTENSION.VSIX
-=========================================================
 
 ---------------------------------------------------------
 ÉTAPE 1 — COMPILER L'EXTENSION
@@ -54,7 +52,7 @@ Copie le fichier .vsix généré dans le dossier public/ :
     cp ai-dev-assistant-0.0.1.vsix ../frontend/public/mon-extension.vsix
 
 Le fichier doit être accessible à l'URL :
-    http://localhost:5173/mon-extension.vsix
+    http://localhost:15173/mon-extension.vsix
 
 
 ---------------------------------------------------------

@@ -15,6 +15,10 @@
       {
         "command": "aiDevAssistant.openPanel",
         "title": "Open AI Dev Assistant"
+      },
+      {
+        "command": "aiDevAssistant.explainSelection",
+        "title": "AI Dev Assistant: Explain Selected Code"
       }
     ],
     "keybindings": [
@@ -22,8 +26,23 @@
         "command": "aiDevAssistant.openPanel",
         "key": "ctrl+shift+a",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "aiDevAssistant.explainSelection",
+        "key": "ctrl+alt+e",
+        "when": "editorTextFocus && editorHasSelection"
       }
     ],
+    "configuration": {
+      "title": "AI Dev Assistant",
+      "properties": {
+        "aiDevAssistant.backendUrl": {
+          "type": "string",
+          "default": "http://localhost:18000",
+          "description": "Base URL for the backend API used by the extension."
+        }
+      }
+    },
     "viewsContainers": {
       "activitybar": [
         {

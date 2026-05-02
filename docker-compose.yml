@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
-    command: ["python", "api_server.py"]
+    command: ["sh", "-c", "python -m mcp_tools.server --mode http --port 8001 & python api_server.py"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
@@ -82,12 +82,16 @@ services:
       OUTPUT_README_DIR: ${OUTPUT_README_DIR:-./outputs/readme}
       OUTPUT_TESTS_DIR: ${OUTPUT_TESTS_DIR:-./outputs/tests}
       OUTPUT_EXPLANATIONS_DIR: ${OUTPUT_EXPLANATIONS_DIR:-./outputs/explanations}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-sse}
+      MCP_URL: ${MCP_URL:-http://localhost:8001}
       DEBUG: ${DEBUG:-false}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FILE: ${LOG_FILE:-}
     ports:
       - "18000:8000"
     volumes:
+
       - ./backend:/app
 
 volumes:
