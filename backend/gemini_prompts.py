@@ -1,216 +1,293 @@
-"""Gemini prompt helpers for architecture/recommendation/other outputs."""
+"""
+DeepSeek/OpenRouter Prompt Engineering Templates
+================================================
+Production-grade prompts for README generation, architecture recommendations,
+and UML diagram description — optimized for OpenRouter (gpt-3.5-turbo).
 
-from __future__ import annotations
+Usage:
+    from gemini_prompts import GeminiPromptEngine
+    engine = GeminiPromptEngine(api_key="YOUR_KEY")
+    result = engine.generate_readme(code=..., project_name=..., language=...)
+"""
 
-import google.generativeai as genai
+from openai import OpenAI
+from enum import Enum
 
+
+# ─────────────────────────────────────────────
+# SYSTEM PROMPTS
+# ─────────────────────────────────────────────
 
 README_SYSTEM_PROMPT = """
-You are a senior software engineer and technical writer.
-Write a professional README in clean Markdown only.
-Do not invent features not supported by the input.
+You are a senior software engineer and technical writer with 15+ years of experience.
+Your specialty is writing clear, professional, and developer-friendly documentation.
+
+RULES:
+- Write in clean, valid Markdown only — no HTML, no extra commentary outside the document.
+- Be specific and concrete. Avoid filler phrases like "robust solution" or "cutting-edge technology".
+- If context is ambiguous, state your assumption explicitly with a note: > ⚠️ Assumption: ...
+- Keep sentences short. Use active voice.
+- Never invent features or capabilities that are not clearly present in the input.
+- Use real-world examples in code blocks when relevant.
+- Badge shields (if used) must use shields.io format.
+
+OUTPUT FORMAT:
+Return only the README.md content. No preamble, no explanation, no closing remarks.
 """.strip()
+
 
 ARCHITECTURE_SYSTEM_PROMPT = """
-You are a principal software architect.
-Write a concise but useful architecture analysis in clean Markdown only.
-Be direct, specific, and practical.
+You are a principal software architect with deep expertise in system design,
+distributed systems, cloud-native patterns, and software engineering best practices.
+
+Your analysis style:
+- Uses C4 model terminology (Context, Container, Component, Code).
+- References well-known patterns by name (CQRS, Event Sourcing, Hexagonal Architecture, etc.).
+- Is opinionated and direct — you say what you think, not just what is possible.
+- Balances trade-offs honestly: every recommendation has a cost you must acknowledge.
+- Distinguishes between "must fix now", "should improve soon", and "nice to have".
+
+RULES:
+- Output in clean Markdown.
+- Use headers, bullet points, and tables where appropriate.
+- Do not hallucinate frameworks or libraries not present in the input.
+- Always ground recommendations in the context provided.
+- If the input is incomplete, state what additional context would change your analysis.
+
+OUTPUT FORMAT:
+Return only the architecture analysis document. No preamble, no closing remarks.
 """.strip()
 
-RECOMMENDATION_SYSTEM_PROMPT = """
-You are a senior software architect and advisor.
-Give practical recommendations, trade-offs, and next steps in clean Markdown only.
-""".strip()
-
-OTHER_SYSTEM_PROMPT = """
-You are a senior software engineer assistant.
-Answer coding and software engineering questions clearly and practically in clean Markdown only.
-If critical context is missing, ask concise follow-up questions first.
-""".strip()
 
 UML_SYSTEM_PROMPT = """
-You are a software architect who writes valid PlantUML only.
-Return only an @startuml ... @enduml block.
+You are a software architect who specializes in translating codebases into precise
+PlantUML diagram descriptions.
+
+Your PlantUML output:
+- Is always valid, executable PlantUML syntax.
+- Uses skinparam for clean, professional styling.
+- Chooses the right diagram type automatically:
+    * Class relationships → Class Diagram
+    * Request flows / processes → Sequence Diagram
+    * System states → State Diagram
+    * Deployment / infrastructure → Deployment Diagram
+    * Use cases → Use Case Diagram
+- Includes only what is architecturally significant — not every getter/setter.
+- Groups related components using packages or namespaces.
+
+RULES:
+- Output ONLY the PlantUML block (starting with @startuml, ending with @enduml).
+- No explanation before or after.
+- Comments inside the diagram (') are allowed for clarity.
+- Use !theme materia or !theme cerulean for clean visuals.
 """.strip()
 
-EXPLANATION_SYSTEM_PROMPT = """
-You are a senior software engineer who explains code clearly and precisely.
-Write clean Markdown only. Use headers, bullet points, and inline code blocks where appropriate.
-Tailor depth to the requested detail level.
-Never hallucinate behavior not visible in the code.
+
+# ─────────────────────────────────────────────
+# USER PROMPT TEMPLATES
+# ─────────────────────────────────────────────
+
+def build_readme_prompt(
+    code: str = "",
+    project_name: str = "",
+    language: str = "",
+    description: str = "",
+    features: list[str] = None,
+    extra_context: str = ""
+) -> str:
+    """Builds a structured user prompt for README generation."""
+    features_block = ""
+    if features:
+        features_block = "KNOWN FEATURES:\n" + "\n".join(f"- {f}" for f in features)
+
+    return f"""
+Generate a complete, professional README.md for the following project.
+
+PROJECT NAME: {project_name or "Infer from code"}
+PRIMARY LANGUAGE / STACK: {language or "Infer from code"}
+SHORT DESCRIPTION: {description or "Infer from code"}
+
+{features_block}
+
+SOURCE CODE / FILE STRUCTURE:
+```
+{code or "Not provided — infer from description and context above."}
+```
+
+{f"ADDITIONAL CONTEXT: {extra_context}" if extra_context else ""}
+
+REQUIRED SECTIONS: Include all sections in the standard README format.
+TONE: Professional, concise, developer-first. No marketing language.
 """.strip()
 
-TEST_SYSTEM_PROMPT = """
-You are a senior software engineer who writes thorough, production-quality unit tests.
-Output a single fenced code block containing the full test file.
-Use the idiomatic test framework for the detected language (pytest for Python, Jest for JS/TS, JUnit for Java, etc.).
-Include: happy path, edge cases, boundary values, error/exception cases.
-Do not invent behavior not shown in the source.
-""".strip()
 
+def build_architecture_prompt(
+    code: str = "",
+    project_name: str = "",
+    language: str = "",
+    description: str = "",
+    concerns: list[str] = None,
+    extra_context: str = ""
+) -> str:
+    """Builds a structured user prompt for architecture analysis."""
+    concerns_block = ""
+    if concerns:
+        concerns_block = "SPECIFIC CONCERNS TO ADDRESS:\n" + "\n".join(f"- {c}" for c in concerns)
 
-def build_readme_prompt(*, code: str = "", project_name: str = "", language: str = "", description: str = "", extra_context: str = "") -> str:
-    return f"""Generate a complete README.md for this project.
+    return f"""
+Perform a complete architecture analysis for the following project and provide
+actionable recommendations.
 
-Project name: {project_name or "Infer from code"}
-Language/stack: {language or "Infer from code"}
-Description: {description or "Infer from code"}
+PROJECT NAME: {project_name or "Unknown"}
+PRIMARY STACK: {language or "Infer from code"}
+DESCRIPTION: {description or "Infer from code"}
 
-Additional context:
-{extra_context or "None"}
-
-Source:
-````
-{code or "Not provided"}
-````
-"""
-
-
-def build_architecture_prompt(*, code: str = "", project_name: str = "", language: str = "", description: str = "", concerns: list[str] | None = None, extra_context: str = "") -> str:
-    concerns_block = "\n".join(f"- {item}" for item in (concerns or [])) or "- None"
-    return f"""Analyze the architecture of this project and provide recommendations.
-
-Project name: {project_name or "Unknown"}
-Stack: {language or "Infer from code"}
-Description: {description or "Infer from code"}
-Concerns:
 {concerns_block}
 
-Additional context:
-{extra_context or "None"}
+SOURCE CODE / STRUCTURE / DESCRIPTION:
+```
+{code or "Not provided — base analysis on description and stack above."}
+```
 
-Source:
-````
-{code or "Not provided"}
-````
-"""
+{f"ADDITIONAL CONTEXT: {extra_context}" if extra_context else ""}
 
-
-def build_recommendation_prompt(*, code: str = "", project_name: str = "", language: str = "", description: str = "", concerns: list[str] | None = None, extra_context: str = "") -> str:
-    concerns_block = "\n".join(f"- {item}" for item in (concerns or [])) or "- None"
-    return f"""Give practical recommendations for this project.
-
-Project name: {project_name or "Unknown"}
-Stack: {language or "Infer from code"}
-Description: {description or "Infer from code"}
-Concerns:
-{concerns_block}
-
-Additional context:
-{extra_context or "None"}
-
-Source:
-````
-{code or "Not provided"}
-````
-"""
+REQUIRED SECTIONS: Architecture summary, strengths, weaknesses, recommendations, scalability assessment, security considerations, quick wins.
+TONE: Direct, opinionated, senior-level. Avoid vague advice. Be specific.
+""".strip()
 
 
-def build_other_prompt(*, question: str = "", context: str = "", extra_context: str = "") -> str:
-    return f"""Answer this software engineering question.
+def build_uml_prompt(
+    code: str = "",
+    diagram_type: str = "auto",
+    project_name: str = "",
+    scope: str = "full",
+    extra_context: str = ""
+) -> str:
+    """Builds a structured user prompt for PlantUML diagram generation."""
+    type_instruction = {
+        "auto":       "Choose the most appropriate diagram type based on the code provided.",
+        "class":      "Generate a Class Diagram showing relationships, inheritance, and key attributes.",
+        "sequence":   "Generate a Sequence Diagram showing the main request/response or event flow.",
+        "state":      "Generate a State Diagram showing the lifecycle of the main entity.",
+        "deployment": "Generate a Deployment Diagram showing infrastructure and service relationships.",
+        "usecase":    "Generate a Use Case Diagram showing actors and system interactions.",
+    }.get(diagram_type, "Choose the most appropriate diagram type.")
 
-Question:
-{question or "Not provided"}
+    scope_instruction = (
+        "Include ALL components, classes, and relationships visible in the code."
+        if scope == "full"
+        else "Focus only on the CORE flow and main architectural components. Omit helpers and utilities."
+    )
 
-Conversation context:
-{context or "None"}
+    return f"""
+Generate a PlantUML diagram for the following project.
 
-Additional context:
-{extra_context or "None"}
-"""
+PROJECT NAME: {project_name or "Project"}
+DIAGRAM TYPE: {type_instruction}
+SCOPE: {scope_instruction}
 
+SOURCE CODE:
+```
+{code or "Not provided — generate based on description and context."}
+```
 
-def build_uml_prompt(*, code: str = "", diagram_type: str = "auto", project_name: str = "", scope: str = "full", extra_context: str = "") -> str:
-    return f"""Generate PlantUML for this project.
+{f"ADDITIONAL CONTEXT / ENTRY POINTS: {extra_context}" if extra_context else ""}
 
-Diagram type: {diagram_type}
-Scope: {scope}
-Project name: {project_name or "Project"}
-
-Additional context:
-{extra_context or "None"}
-
-Source:
-````
-{code or "Not provided"}
-````
-"""
-
-
-def build_explanation_prompt(*, code: str = "", language: str = "", detail_level: str = "standard") -> str:
-    level_map = {
-        "brief": "2-4 sentence summary: what it does and its primary purpose.",
-        "standard": "What it does, how it works step-by-step, key functions/classes, and important patterns.",
-        "detailed": "Thorough: purpose, step-by-step mechanics, design patterns, edge cases, gotchas, and improvement suggestions.",
-    }
-    instruction = level_map.get(detail_level, level_map["standard"])
-    return f"""Explain the following code.
-
-Language: {language or "Detect from code"}
-Detail level: {detail_level}
-Instruction: {instruction}
-
-Code:
-````
-{code or "Not provided"}
-````
-"""
+REQUIREMENTS:
+- Output ONLY the PlantUML code block
+- Use valid PlantUML syntax
+- Keep the diagram readable — if too complex, focus on the most important layer
+""".strip()
 
 
-def build_tests_prompt(*, code: str = "", language: str = "") -> str:
-    return f"""Generate comprehensive unit tests for the following code.
-
-Language: {language or "Detect from code"}
-Use the idiomatic test framework for the detected language.
-
-Source code:
-````
-{code or "Not provided"}
-````
-
-Requirements:
-- Cover happy path, edge cases, boundary values, and error/exception scenarios
-- Output a single complete, runnable test file in a fenced code block
-- Do not invent functions or behavior not present in the source
-"""
-
+# ─────────────────────────────────────────────
+# ENGINE CLASS
+# ─────────────────────────────────────────────
 
 class GeminiPromptEngine:
-    MODEL = "gemini-2.0-flash"
-    GENERATION_CONFIG = {
-        "temperature": 0.3,
-        "top_p": 0.9,
-        "top_k": 40,
-        "max_output_tokens": 8192,
-    }
+    """
+    Main engine for generating technical documentation using OpenRouter API.
+
+    Example:
+        engine = GeminiPromptEngine(api_key="YOUR_KEY")
+        readme = engine.generate_readme(code=src, project_name="MyApp", language="Python")
+        arch   = engine.generate_architecture(code=src, concerns=["scalability"])
+        uml    = engine.generate_uml(code=src, diagram_type="sequence")
+    """
+
+    MODEL = "gpt-3.5-turbo"  # Available on OpenRouter free tier
 
     def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
-
-    def _model(self, system_prompt: str):
-        return genai.GenerativeModel(
-            model_name=self.MODEL,
-            system_instruction=system_prompt,
-            generation_config=self.GENERATION_CONFIG,
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
         )
 
+    def _get_response(self, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=8192,
+        )
+        return response.choices[0].message.content
+
     def generate_readme(self, **kwargs) -> str:
-        return self._model(README_SYSTEM_PROMPT).generate_content(build_readme_prompt(**kwargs)).text
+        """Generate a README.md. Accepts all build_readme_prompt() kwargs."""
+        prompt = build_readme_prompt(**kwargs)
+        return self._get_response(README_SYSTEM_PROMPT, prompt)
 
     def generate_architecture(self, **kwargs) -> str:
-        return self._model(ARCHITECTURE_SYSTEM_PROMPT).generate_content(build_architecture_prompt(**kwargs)).text
-
-    def generate_recommendation(self, **kwargs) -> str:
-        return self._model(RECOMMENDATION_SYSTEM_PROMPT).generate_content(build_recommendation_prompt(**kwargs)).text
+        """Generate an architecture analysis. Accepts all build_architecture_prompt() kwargs."""
+        prompt = build_architecture_prompt(**kwargs)
+        return self._get_response(ARCHITECTURE_SYSTEM_PROMPT, prompt)
 
     def generate_uml(self, **kwargs) -> str:
-        return self._model(UML_SYSTEM_PROMPT).generate_content(build_uml_prompt(**kwargs)).text
+        """Generate PlantUML code. Accepts all build_uml_prompt() kwargs."""
+        prompt = build_uml_prompt(**kwargs)
+        return self._get_response(UML_SYSTEM_PROMPT, prompt)
 
-    def generate_other(self, **kwargs) -> str:
-        return self._model(OTHER_SYSTEM_PROMPT).generate_content(build_other_prompt(**kwargs)).text
+    def generate_tests(self, code: str = "", language: str = "auto") -> str:
+        """Generate unit tests for the given code."""
+        system_prompt = """You are an expert software testing engineer. Generate comprehensive, 
+        production-ready unit tests. Output only the test code with no explanation."""
+        user_prompt = f"Generate unit tests for the following {language} code:\n\n{code}"
+        return self._get_response(system_prompt, user_prompt)
 
-    def generate_explanation(self, **kwargs) -> str:
-        return self._model(EXPLANATION_SYSTEM_PROMPT).generate_content(build_explanation_prompt(**kwargs)).text
+    def generate_explanation(self, code: str = "", language: str = "auto", detail_level: str = "standard") -> str:
+        """Generate a detailed explanation of code."""
+        detail_instruction = {
+            "brief": "Provide a concise one-paragraph explanation.",
+            "standard": "Provide a clear, medium-length explanation with key concepts.",
+            "detailed": "Provide a comprehensive explanation with examples and edge cases."
+        }.get(detail_level, "Provide a clear explanation.")
+        
+        system_prompt = f"""You are a senior code mentor explaining code to developers. 
+        {detail_instruction} Be clear and educational."""
+        user_prompt = f"Explain this {language} code:\n\n{code}"
+        return self._get_response(system_prompt, user_prompt)
 
-    def generate_tests(self, **kwargs) -> str:
-        return self._model(TEST_SYSTEM_PROMPT).generate_content(build_tests_prompt(**kwargs)).text
+    def generate_recommendation(self, code: str = "", project_name: str = "", language: str = "auto", description: str = "") -> str:
+        """Generate architectural or code improvement recommendations."""
+        system_prompt = """You are a principal software architect. Provide practical, 
+        actionable recommendations with clear trade-offs and rationale. Be concise and direct."""
+        user_prompt = f"""Project: {project_name or 'Unknown'}
+Language: {language}
+
+{description or 'Provide recommendations for this code:'}
+
+{code}"""
+        return self._get_response(system_prompt, user_prompt)
+
+    def generate_other(self, question: str = "", context: str = "", extra_context: str = "") -> str:
+        """Generate general guidance for open-ended questions."""
+        system_prompt = """You are a helpful software engineering expert. Provide practical, 
+        well-reasoned guidance. Be concise and direct."""
+        full_context = "\n\n".join(filter(None, [context, extra_context]))
+        user_prompt = f"""{question}
+
+{f'Context: {full_context}' if full_context else ''}"""
+        return self._get_response(system_prompt, user_prompt)

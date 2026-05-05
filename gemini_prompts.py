@@ -1,8 +1,8 @@
 """
-Gemini Prompt Engineering Templates
-====================================
+DeepSeek Prompt Engineering Templates
+======================================
 Production-grade prompts for README generation, architecture recommendations,
-and UML diagram description — optimized for gemini-2.0-flash.
+and UML diagram description — optimized for deepseek-chat.
 
 Usage:
     from gemini_prompts import GeminiPromptEngine
@@ -10,7 +10,7 @@ Usage:
     result = engine.generate_readme(code=..., project_name=..., language=...)
 """
 
-import google.generativeai as genai
+from openai import OpenAI
 from enum import Enum
 
 
@@ -318,7 +318,7 @@ OUTPUT: Only the PlantUML code block. Nothing else.
 
 class GeminiPromptEngine:
     """
-    Main engine for generating technical documentation using Gemini API.
+    Main engine for generating technical documentation using DeepSeek API.
 
     Example:
         engine = GeminiPromptEngine(api_key="YOUR_KEY")
@@ -327,45 +327,83 @@ class GeminiPromptEngine:
         uml    = engine.generate_uml(code=src, diagram_type="sequence")
     """
 
-    MODEL = "gemini-2.0-flash"
-
-    GENERATION_CONFIG = {
-        "temperature": 0.3,        # Lower = more consistent, structured output
-        "top_p": 0.9,
-        "top_k": 40,
-        "max_output_tokens": 8192,
-    }
+    MODEL = "gpt-3.5-turbo"  # Available on OpenRouter free tier
 
     def __init__(self, api_key: str):
-        genai.configure(api_key=api_key)
-
-    def _get_model(self, system_prompt: str):
-        return genai.GenerativeModel(
-            model_name=self.MODEL,
-            system_instruction=system_prompt,
-            generation_config=self.GENERATION_CONFIG,
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
         )
+
+    def _get_response(self, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=8192,
+        )
+        return response.choices[0].message.content
 
     def generate_readme(self, **kwargs) -> str:
         """Generate a README.md. Accepts all build_readme_prompt() kwargs."""
-        model = self._get_model(README_SYSTEM_PROMPT)
         prompt = build_readme_prompt(**kwargs)
-        response = model.generate_content(prompt)
-        return response.text
+        return self._get_response(README_SYSTEM_PROMPT, prompt)
 
     def generate_architecture(self, **kwargs) -> str:
         """Generate an architecture analysis. Accepts all build_architecture_prompt() kwargs."""
-        model = self._get_model(ARCHITECTURE_SYSTEM_PROMPT)
         prompt = build_architecture_prompt(**kwargs)
-        response = model.generate_content(prompt)
-        return response.text
+        return self._get_response(ARCHITECTURE_SYSTEM_PROMPT, prompt)
 
     def generate_uml(self, **kwargs) -> str:
         """Generate PlantUML code. Accepts all build_uml_prompt() kwargs."""
-        model = self._get_model(UML_SYSTEM_PROMPT)
         prompt = build_uml_prompt(**kwargs)
-        response = model.generate_content(prompt)
-        return response.text
+        return self._get_response(UML_SYSTEM_PROMPT, prompt)
+
+    def generate_tests(self, code: str = "", language: str = "auto") -> str:
+        """Generate unit tests for the given code."""
+        system_prompt = """You are an expert software testing engineer. Generate comprehensive, 
+        production-ready unit tests. Output only the test code with no explanation."""
+        user_prompt = f"Generate unit tests for the following {language} code:\n\n{code}"
+        return self._get_response(system_prompt, user_prompt)
+
+    def generate_explanation(self, code: str = "", language: str = "auto", detail_level: str = "standard") -> str:
+        """Generate a detailed explanation of code."""
+        detail_instruction = {
+            "brief": "Provide a concise one-paragraph explanation.",
+            "standard": "Provide a clear, medium-length explanation with key concepts.",
+            "detailed": "Provide a comprehensive explanation with examples and edge cases."
+        }.get(detail_level, "Provide a clear explanation.")
+        
+        system_prompt = f"""You are a senior code mentor explaining code to developers. 
+        {detail_instruction} Be clear and educational."""
+        user_prompt = f"Explain this {language} code:\n\n{code}"
+        return self._get_response(system_prompt, user_prompt)
+
+    def generate_recommendation(self, code: str = "", project_name: str = "", language: str = "auto", description: str = "") -> str:
+        """Generate architectural or code improvement recommendations."""
+        system_prompt = """You are a principal software architect. Provide practical, 
+        actionable recommendations with clear trade-offs and rationale. Be concise and direct."""
+        user_prompt = f"""Project: {project_name or 'Unknown'}
+Language: {language}
+
+{description or 'Provide recommendations for this code:'}
+
+{code}"""
+        return self._get_response(system_prompt, user_prompt)
+
+    def generate_other(self, question: str = "", context: str = "", extra_context: str = "") -> str:
+        """Generate general guidance for open-ended questions."""
+        system_prompt = """You are a helpful software engineering expert. Provide practical, 
+        well-reasoned guidance. Be concise and direct."""
+        full_context = "\n\n".join(filter(None, [context, extra_context]))
+        user_prompt = f"""{question}
+
+{f'Context: {full_context}' if full_context else ''}"""
+        return self._get_response(system_prompt, user_prompt)
+
 
 
 # ─────────────────────────────────────────────
@@ -375,7 +413,7 @@ class GeminiPromptEngine:
 if __name__ == "__main__":
     import os
 
-    engine = GeminiPromptEngine(api_key=os.getenv("GEMINI_API_KEY"))
+    engine = GeminiPromptEngine(api_key=os.getenv("DEEPSEEK_API_KEY"))
 
     sample_code = """
     # app/main.py

@@ -84,9 +84,9 @@ def _get_mcp():
 def _get_gemini():
     global _GEMINI_ENGINE
     if _GEMINI_ENGINE is None:
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("GEMINI_API_KEY")
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY is required for Gemini-powered outputs")
+            raise RuntimeError("DEEPSEEK_API_KEY is required for AI-powered outputs")
         _GEMINI_ENGINE = GeminiPromptEngine(api_key)
     return _GEMINI_ENGINE
 
