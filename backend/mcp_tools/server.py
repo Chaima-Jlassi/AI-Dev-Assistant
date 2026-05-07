@@ -62,7 +62,15 @@ def _rag():
     global _rag_instance
     if _rag_instance is None:
         logger.info("Initialising RAG retriever …")
-        _rag_instance = _get_rag_retriever()()
+        try:
+            _rag_instance = _get_rag_retriever()()
+        except Exception as e:
+            logger.error(f"RAG initialisation failed: {e}. Falling back to empty retriever.")
+            # Fallback retriever that returns no context so LLM can still operate
+            class _FallbackRAG:
+                def retrieve(self, query, top_k=1):
+                    return [], []
+            _rag_instance = _FallbackRAG()
     return _rag_instance
 
 def _renderer():

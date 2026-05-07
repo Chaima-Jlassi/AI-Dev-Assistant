@@ -280,7 +280,21 @@ class _SseTransport:
         if event_type == "endpoint" or (
             not self._ready.is_set() and data.startswith("/messages")
         ):
-            self._messages_url = self._base + data.strip()
+            # Server may return a session id without hyphens (32 hex chars).
+            # Normalize to canonical hyphenated UUID form so server lookup succeeds.
+            path = data.strip()
+            try:
+                import re
+                m = re.search(r'session_id=([0-9a-fA-F]{32}|[0-9a-fA-F\-]{36})', path)
+                if m:
+                    sid = m.group(1)
+                    if len(sid) == 32:
+                        # insert hyphens at 8-12-16-20
+                        sid = f"{sid[0:8]}-{sid[8:12]}-{sid[12:16]}-{sid[16:20]}-{sid[20:32]}"
+                        path = re.sub(r'session_id=[0-9a-fA-F]{32}', f'session_id={sid}', path)
+            except Exception:
+                pass
+            self._messages_url = self._base + path
             self._ready.set()
             return
 

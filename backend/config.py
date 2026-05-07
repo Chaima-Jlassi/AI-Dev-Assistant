@@ -7,7 +7,7 @@ from typing import Optional
 @dataclass
 class OllamaConfig:
     url: str = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-    model: str = os.getenv("OLLAMA_MODEL", "mistral")
+    model: str = os.getenv("OLLAMA_MODEL", "mistral:latest")
     timeout: int = int(os.getenv("OLLAMA_TIMEOUT", "180"))
     max_retries: int = int(os.getenv("OLLAMA_MAX_RETRIES", "3"))
     temperature: float = float(os.getenv("OLLAMA_TEMPERATURE", "0.3"))

@@ -62,7 +62,7 @@ def _resolve_output_name(output_name: str, detail_level: str) -> str:
     return output_name
 
 
-def explain_code(code: str, output_name: str = "explanation.md") -> Optional[str]:
+def explain_code(code: str, output_name: str = "explanation.md", detail_level: str = None) -> Optional[str]:
     """
     Produce a structured explanation of source code.
 
@@ -70,14 +70,20 @@ def explain_code(code: str, output_name: str = "explanation.md") -> Optional[str
         code:        Raw source code.
         output_name: Filename saved under outputs/explanations/ or a detail level
                      shorthand (low | medium | high).
+        detail_level: Optional explicit detail level override: low | medium | high.
 
     Returns:
-        The generated explanation text, or None on failure.
+        The path to the saved explanation file, or None on failure.
     """
     from config import CONFIG
 
     client = get_client()
-    detail_level = _resolve_detail_level(output_name)
+    # Resolve detail level: explicit override wins, otherwise infer from output_name
+    if detail_level is None:
+        detail_level = _resolve_detail_level(output_name)
+    else:
+        detail_level = _resolve_detail_level(detail_level)
+
     file_name = _resolve_output_name(output_name, detail_level)
     prompt = _PROMPT_TEMPLATE.format(code=code, detail_level=detail_level)
 
@@ -92,7 +98,7 @@ def explain_code(code: str, output_name: str = "explanation.md") -> Optional[str
     try:
         out_path.write_text(response, encoding="utf-8")
         logger.info(f"Explanation saved → {out_path}")
-        return response
+        return str(out_path)
     except Exception as e:
         logger.error(f"Failed to save explanation: {e}")
         return None
