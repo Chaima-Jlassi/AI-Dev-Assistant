@@ -58,10 +58,22 @@ def _compact_context(context: str, max_chars: int = 45000) -> str:
 def _diagrams_to_markdown(diagrams: list) -> str:
     lines = ["Generated diagram(s) via MCP + PlantUML:"]
     for d in diagrams:
-        idx      = d["index"]
+        idx = d["index"]
         filename = Path(d["image_path"]).name
-        url      = f"{request.host_url.rstrip('/')}/api/diagrams/{filename}"
-        lines += [f"\n### Diagram {idx}", f"![Diagram {idx}]({url})", f"[Open]({url})"]
+        url = f"{request.host_url.rstrip('/')}/api/diagrams/{filename}"
+        # If the rendered asset is an image, embed it; otherwise provide a download link without inline code.
+        if filename.lower().endswith(('.png', '.svg', '.jpg', '.jpeg')):
+            lines += [
+                f"\n### Diagram {idx}",
+                f"![Diagram {idx}]({url})",
+                f"[📥 Download]({url}) | [🔗 Open in new tab]({url})"
+            ]
+        else:
+            lines += [
+                f"\n### Diagram {idx}",
+                f"[Download UML source]({url})",
+                "Render failed, so only the UML source is available. Please retry to generate the image.",
+            ]
     return "\n".join(lines)
 
 

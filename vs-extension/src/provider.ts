@@ -274,6 +274,7 @@ export class AiDevAssistantProvider implements vscode.WebviewViewProvider {
           res.on('data', chunk => data += chunk);
           res.on('end', () => resolve(data));
         });
+        req.setTimeout(10000, () => { req.destroy(new Error('Request timeout')); });
         req.on('error', reject);
         if (method === 'POST') req.write(body);
         req.end();

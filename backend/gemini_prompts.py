@@ -215,25 +215,64 @@ class GeminiPromptEngine:
         uml    = engine.generate_uml(code=src, diagram_type="sequence")
     """
 
-    MODEL = "gpt-3.5-turbo"  # Available on OpenRouter free tier
+    MODEL = "llama-3.3-70b-versatile"  # Available on Groq free tier
 
     def __init__(self, api_key: str):
-        self.client = OpenAI(
-            api_key=api_key,
-            base_url="https://openrouter.ai/api/v1"
-        )
+        # Keep the OpenAI client if available, but also store raw API details for a requests-based fallback.
+        self.api_key = api_key
+        self.base_url = "https://api.groq.com/openai/v1"
+        try:
+            self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        except Exception:
+            self.client = None
 
     def _get_response(self, system_prompt: str, user_prompt: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.MODEL,
-            messages=[
+        # First try using the OpenAI client (if present); fall back to a direct requests call that sets
+        # Authorization header explicitly (avoids client-specific auth edge cases).
+        payload = {
+            "model": self.MODEL,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.3,
-            max_tokens=8192,
-        )
-        return response.choices[0].message.content
+            "temperature": 0.3,
+            "max_tokens": 8192,
+        }
+        # Try OpenAI client
+        if getattr(self, "client", None) is not None:
+            try:
+                response = self.client.chat.completions.create(**payload)
+                # Some OpenAI SDKs return different shapes; be defensive
+                if hasattr(response, 'choices') and response.choices:
+                    choice = response.choices[0]
+                    # new SDK shape
+                    if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
+                        return choice.message.content
+                    # fallback
+                    return getattr(choice, 'text', str(choice))
+            except Exception:
+                # fall through to requests-based call
+                pass
+
+        # Direct HTTP fallback (OpenRouter-compatible endpoint)
+        import requests
+        headers = {
+            'Authorization': f'Bearer {self.api_key}',
+            'Content-Type': 'application/json',
+        }
+        url = f"{self.base_url}/chat/completions"
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        # parse response defensively
+        if isinstance(data, dict):
+            # OpenRouter returns { 'choices': [ { 'message': { 'content': '...' } } ] }
+            choices = data.get('choices') or []
+            if choices:
+                msg = choices[0].get('message') or choices[0]
+                if isinstance(msg, dict):
+                    return msg.get('content') or msg.get('text') or ''
+        return str(data)
 
     def generate_readme(self, **kwargs) -> str:
         """Generate a README.md. Accepts all build_readme_prompt() kwargs."""

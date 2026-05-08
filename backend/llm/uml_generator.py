@@ -1,5 +1,6 @@
 """PlantUML generator — moved here from ollama_client_v2 for cleaner separation."""
 from typing import List, Optional
+import re
 from logger import logger
 from errors import OllamaError, extract_uml_codes
 from llm.ollama_client import get_client
@@ -59,6 +60,42 @@ Generate exactly {count} PlantUML {diagram_type} diagram(s).
 """
 
 
+def _sanitize_uml(uml: str) -> str:
+    """
+    Best-effort cleanup for common LLM arrow syntax mistakes that
+    PlantUML rejects (e.g., "-->+" or "--+>").
+    """
+    if not uml:
+        return uml
+
+    replacements = {
+        "-->+": "-->",
+        "--+>": "-->",
+        "<--+": "<--",
+        "<+--": "<--",
+        "+-->": "-->",
+    }
+    for bad, good in replacements.items():
+        uml = uml.replace(bad, good)
+
+    # Fix invalid relation syntax produced by some models:
+    #   A -- Label --> B    ->   A --> B : Label
+    #   A <-- Label -- B    ->   A <-- B : Label
+    uml = re.sub(
+        r"(?m)^(\s*[A-Za-z_][\w.]*)\s+--\s+([^:\n]+?)\s+-->\s+([A-Za-z_][\w.]*)\s*$",
+        r"\1 --> \3 : \2",
+        uml,
+    )
+    uml = re.sub(
+        r"(?m)^(\s*[A-Za-z_][\w.]*)\s+<--\s+([^:\n]+?)\s+--\s+([A-Za-z_][\w.]*)\s*$",
+        r"\1 <-- \3 : \2",
+        uml,
+    )
+
+    uml = re.sub(r"--\+", "--", uml)
+    return uml
+
+
 def generate_plantuml(
     user_input: str,
     context: str,
@@ -87,10 +124,16 @@ def generate_plantuml(
         if not blocks:
             logger.error("No valid UML blocks extracted from response")
             return None
+        cleaned_blocks = []
+        for block in blocks:
+            cleaned = _sanitize_uml(block)
+            if cleaned != block:
+                logger.warning("Sanitized UML block to fix invalid arrow syntax")
+            cleaned_blocks.append(cleaned)
         if len(blocks) < count:
             logger.warning(f"Requested {count}, got {len(blocks)} valid block(s)")
         logger.info(f"Extracted {len(blocks)} UML block(s)")
-        return blocks
+        return cleaned_blocks
     except OllamaError as e:
         logger.error(f"UML generation failed: {e}")
         raise

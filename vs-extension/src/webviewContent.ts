@@ -26,6 +26,7 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     --font:'Segoe UI',system-ui,-apple-system,sans-serif;
     --mono:'Cascadia Code','Fira Code',monospace;
   }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   body{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px}
   .shell{display:flex;flex-direction:column;height:100%;min-height:0}
 
@@ -72,7 +73,7 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
   .ctx-pill strong{color:var(--text);font-weight:500}
   .ctx-clear{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 2px;line-height:1}
   .ctx-clear:hover{color:var(--text)}
-  .code-input{width:100%;min-height:80px;max-height:160px;resize:none;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.5;outline:none}
+  .code-input{width:100%;min-height:72px;max-height:140px;resize:none;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);padding:8px 10px;font-family:var(--mono);font-size:11px;line-height:1.5;outline:none}
   .code-input:focus{border-color:var(--accent)}
   .code-input::placeholder{color:var(--muted);font-family:var(--font)}
   .text-input{width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text);padding:4px 9px;font:inherit;font-size:12px;outline:none}
@@ -120,20 +121,20 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
       <span class="service-name">Generate README</span>
       <span class="service-hint">Scan workspace files and generate a project README.</span>
     </button>
-    <button class="service-item" onclick="selectService('uml')">
-      <span class="service-name">Generate UML Diagram</span>
-      <span class="service-hint">Describe a system and produce a PlantUML diagram.</span>
-    </button>
     <button class="service-item" onclick="selectService('tests')">
       <span class="service-name">Generate Unit Tests</span>
       <span class="service-hint">Create unit tests for selected or pasted code.</span>
+    </button>
+    <button class="service-item" onclick="selectService('recommendation')">
+      <span class="service-name">General Recommendation</span>
+      <span class="service-hint">Describe a problem or decision and get an AI recommendation.</span>
     </button>
   </div>
 
   <!-- Per-service conversation view (hidden initially) -->
   <div class="conv-view" id="viewConversation" style="display:none">
     <div class="conv-head">
-      <button class="back-btn" id="backBtn" onclick="goBack()">&#8592; Back</button>
+      <button class="back-btn" onclick="goBack()">&#8592; Back</button>
       <span class="conv-title" id="convTitle"></span>
     </div>
     <div class="conv-messages" id="convMessages"></div>
@@ -146,24 +147,27 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
 
-  // ── State ─────────────────────────────────────────────────────────────────
+  // ── State ──────────────────────────────────────────────────────────────────
   let currentService = '';
   let currentFile = { name: '', path: '', language: '', content: '' };
   let selectedCode = '';
   let selectedLines = 0;
   let explainDetailLevel = 'standard';
-  let umlDiagramType = 'auto';
   let pendingReadme = false;
   let lastResult = '';
 
-  // ── Navigation ────────────────────────────────────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────────────
   function selectService(service) {
     currentService = service;
     document.getElementById('viewService').style.display = 'none';
     const convView = document.getElementById('viewConversation');
     convView.style.display = 'flex';
-
-    const titles = { explain: 'Explain Code', readme: 'Generate README', uml: 'Generate UML Diagram', tests: 'Generate Unit Tests' };
+    const titles = {
+      explain: 'Explain Code',
+      readme: 'Generate README',
+      tests: 'Generate Unit Tests',
+      recommendation: 'General Recommendation'
+    };
     document.getElementById('convTitle').textContent = titles[service] || service;
     document.getElementById('convMessages').innerHTML = '';
     lastResult = '';
@@ -177,89 +181,72 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     document.getElementById('viewService').style.display = 'flex';
   }
 
-  // ── Input panels ──────────────────────────────────────────────────────────
+  // ── Input panels ───────────────────────────────────────────────────────────
   function initServiceInput(service) {
     const el = document.getElementById('convInput');
 
     if (service === 'explain') {
-      const hasSelection = selectedCode.length > 0;
+      const hasSel = selectedCode.length > 0;
       el.innerHTML =
-        (hasSelection
-          ? '<div class="ctx-pill"><strong>' + esc(selectedLines) + ' lines selected</strong> from ' + esc(currentFile.name || 'file') + '<button class="ctx-clear" onclick="clearSelection()" title="Clear">x</button></div>'
-          : '') +
-        '<textarea id="codeInputEl" class="code-input" placeholder="Paste code to explain..." rows="5">' +
-        (hasSelection ? esc(selectedCode) : '') +
-        '</textarea>' +
+        (hasSel ? '<div class="ctx-pill"><strong>' + esc(selectedLines) + ' lines selected</strong> from ' + esc(currentFile.name || 'file') +
+          '<button class="ctx-clear" onclick="clearSelection()" title="Clear">&#x2715;</button></div>' : '') +
+        '<textarea id="codeInputEl" class="code-input" placeholder="Paste code to explain...">' +
+        (hasSel ? esc(selectedCode) : '') + '</textarea>' +
         '<div class="input-label">Detail level</div>' +
         '<div class="pill-row">' +
-        '<button class="pill-btn' + (explainDetailLevel === 'brief' ? ' active' : '') + '" id="detailBrief" onclick="setDetailLevel(\'brief\')">Brief</button>' +
-        '<button class="pill-btn' + (explainDetailLevel === 'standard' ? ' active' : '') + '" id="detailStandard" onclick="setDetailLevel(\'standard\')">Standard</button>' +
-        '<button class="pill-btn' + (explainDetailLevel === 'detailed' ? ' active' : '') + '" id="detailDetailed" onclick="setDetailLevel(\'detailed\')">Detailed</button>' +
-        '</div>' +
+        ['brief','standard','detailed'].map(l =>
+          '<button class="pill-btn' + (explainDetailLevel === l ? ' active' : '') +
+          '" onclick="setDetailLevel(\'' + l + '\')">' + cap(l) + '</button>'
+        ).join('') + '</div>' +
         '<div class="action-row"><button class="primary-btn" id="runBtn" onclick="runExplain()">Explain</button></div>';
     }
 
-    if (service === 'readme') {
-      const projectName = currentFile.path ? currentFile.path.split(/[/\\]/).slice(-3, -1).join('/') : 'workspace';
+    else if (service === 'readme') {
+      const proj = currentFile.path ? currentFile.path.replace(/\\/g,'/').split('/').slice(-3,-1).join('/') : 'workspace';
       el.innerHTML =
-        '<div class="ctx-pill">Project: <strong>' + esc(projectName) + '</strong></div>' +
-        '<div class="input-label">This will scan all workspace files and generate a README using Gemini.</div>' +
-        '<div class="action-row"><button class="primary-btn" id="runBtn" onclick="runReadme()">Scan and Generate</button></div>';
+        '<div class="ctx-pill">Project: <strong>' + esc(proj) + '</strong></div>' +
+        '<div class="input-label">Scans all workspace source files and generates a README with AI.</div>' +
+        '<div class="action-row"><button class="primary-btn" id="runBtn" onclick="runReadme()">Scan &amp; Generate</button></div>';
     }
 
-    if (service === 'uml') {
+    else if (service === 'tests') {
+      const hasSel = selectedCode.length > 0;
       el.innerHTML =
-        '<textarea id="umlDescInput" class="code-input" placeholder="Describe the system, components, and interactions..." rows="4"></textarea>' +
-        '<div class="input-label">Diagram type</div>' +
-        '<div class="pill-row">' +
-        '<button class="pill-btn' + (umlDiagramType === 'auto' ? ' active' : '') + '" onclick="setUmlType(\'auto\')">Auto</button>' +
-        '<button class="pill-btn' + (umlDiagramType === 'class' ? ' active' : '') + '" onclick="setUmlType(\'class\')">Class</button>' +
-        '<button class="pill-btn' + (umlDiagramType === 'sequence' ? ' active' : '') + '" onclick="setUmlType(\'sequence\')">Sequence</button>' +
-        '<button class="pill-btn' + (umlDiagramType === 'activity' ? ' active' : '') + '" onclick="setUmlType(\'activity\')">Activity</button>' +
-        '</div>' +
-        '<div class="action-row"><button class="primary-btn" id="runBtn" onclick="runUml()">Generate</button></div>';
-    }
-
-    if (service === 'tests') {
-      const hasSelection = selectedCode.length > 0;
-      el.innerHTML =
-        (hasSelection
-          ? '<div class="ctx-pill"><strong>' + esc(selectedLines) + ' lines selected</strong> from ' + esc(currentFile.name || 'file') + '<button class="ctx-clear" onclick="clearSelection()" title="Clear">x</button></div>'
-          : '') +
-        '<textarea id="codeInputEl" class="code-input" placeholder="Paste code to generate tests for..." rows="5">' +
-        (hasSelection ? esc(selectedCode) : '') +
-        '</textarea>' +
-        '<input id="langInputEl" type="text" class="text-input" placeholder="Language (optional, auto-detected)" />' +
+        (hasSel ? '<div class="ctx-pill"><strong>' + esc(selectedLines) + ' lines selected</strong> from ' + esc(currentFile.name || 'file') +
+          '<button class="ctx-clear" onclick="clearSelection()" title="Clear">&#x2715;</button></div>' : '') +
+        '<textarea id="codeInputEl" class="code-input" placeholder="Paste code to generate tests for...">' +
+        (hasSel ? esc(selectedCode) : '') + '</textarea>' +
+        '<input id="langInputEl" type="text" class="text-input" placeholder="Language (optional — auto-detected)" />' +
         '<div class="action-row"><button class="primary-btn" id="runBtn" onclick="runTests()">Generate Tests</button></div>';
     }
+
+    else if (service === 'recommendation') {
+      el.innerHTML =
+        '<div class="input-label">Describe your problem or decision</div>' +
+        '<textarea id="problemInputEl" class="code-input" placeholder="e.g. Should I use Redis or Memcached for caching in this setup?" style="min-height:56px"></textarea>' +
+        '<div class="input-label">Context (optional)</div>' +
+        '<textarea id="contextInputEl" class="code-input" placeholder="Project details, current stack, scale requirements..." style="min-height:56px"></textarea>' +
+        '<div class="input-label">Constraints (optional)</div>' +
+        '<textarea id="constraintsInputEl" class="code-input" placeholder="Budget, team size, deadlines, existing infrastructure..." style="min-height:40px"></textarea>' +
+        '<div class="action-row"><button class="primary-btn" id="runBtn" onclick="runRecommendation()">Get Recommendation</button></div>';
+    }
   }
 
-  // ── Detail / type selectors ───────────────────────────────────────────────
+  // ── Detail level selector ──────────────────────────────────────────────────
   function setDetailLevel(level) {
     explainDetailLevel = level;
-    ['brief', 'standard', 'detailed'].forEach(l => {
-      const btn = document.getElementById('detail' + l.charAt(0).toUpperCase() + l.slice(1));
-      if (btn) btn.classList.toggle('active', l === level);
-    });
-  }
-
-  function setUmlType(type) {
-    umlDiagramType = type;
     document.querySelectorAll('#convInput .pill-btn').forEach(function(btn) {
-      const label = btn.textContent.trim().toLowerCase();
-      btn.classList.toggle('active', label === type || (type === 'auto' && label === 'auto'));
+      btn.classList.toggle('active', btn.textContent.trim().toLowerCase() === level);
     });
   }
 
   function clearSelection() {
     selectedCode = '';
     selectedLines = 0;
-    if (currentService === 'explain' || currentService === 'tests') {
-      initServiceInput(currentService);
-    }
+    if (currentService === 'explain' || currentService === 'tests') initServiceInput(currentService);
   }
 
-  // ── Run actions ───────────────────────────────────────────────────────────
+  // ── Run actions ────────────────────────────────────────────────────────────
   function runExplain() {
     const codeEl = document.getElementById('codeInputEl');
     const code = codeEl ? codeEl.value.trim() : selectedCode;
@@ -283,25 +270,6 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     vscode.postMessage({ command: 'getAllFilesContent' });
   }
 
-  function runUml() {
-    const descEl = document.getElementById('umlDescInput');
-    const desc = descEl ? descEl.value.trim() : '';
-    if (!desc) { appendMsg('assistant', 'Please describe the system first.'); return; }
-    setRunning(true);
-    appendMsg('user', 'Generate ' + umlDiagramType + ' diagram');
-    callBackend('/api/analyze', {
-      type: 'uml',
-      prompt: desc,
-      context: '',
-      intake: {
-        diagramTypes: [umlDiagramType === 'auto' ? 'sequence' : umlDiagramType],
-        systemDescription: desc,
-        actorsServices: desc,
-        extraInfo: '',
-      },
-    }, 'uml_' + Date.now());
-  }
-
   function runTests() {
     const codeEl = document.getElementById('codeInputEl');
     const langEl = document.getElementById('langInputEl');
@@ -319,19 +287,38 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     }, 'tests_' + Date.now());
   }
 
+  function runRecommendation() {
+    const problem = (document.getElementById('problemInputEl') || {}).value || '';
+    const context = (document.getElementById('contextInputEl') || {}).value || '';
+    const constraints = (document.getElementById('constraintsInputEl') || {}).value || '';
+    if (!problem.trim()) { appendMsg('assistant', 'Please describe the problem or decision first.'); return; }
+    setRunning(true);
+    appendMsg('user', problem.trim().slice(0, 120) + (problem.length > 120 ? '...' : ''));
+    callBackend('/api/analyze', {
+      type: 'recommendation',
+      prompt: problem.trim(),
+      context: context.trim(),
+      intake: {
+        problem: problem.trim(),
+        context: context.trim(),
+        constraints: constraints.trim(),
+      },
+    }, 'recommendation_' + Date.now());
+  }
+
   function setRunning(on) {
     const btn = document.getElementById('runBtn');
     if (btn) btn.disabled = on;
   }
 
-  // ── Message helpers ───────────────────────────────────────────────────────
+  // ── Message helpers ────────────────────────────────────────────────────────
   function appendMsg(role, html) {
     const container = document.getElementById('convMessages');
     const div = document.createElement('div');
     div.className = 'msg ' + role;
     div.innerHTML =
       '<div class="msg-role">' + (role === 'user' ? 'You' : 'Assistant') + '</div>' +
-      '<div class="msg-bubble">' + (role === 'assistant' ? renderMessageHtml(html) : esc(html)) + '</div>';
+      '<div class="msg-bubble">' + (role === 'assistant' ? renderMd(html) : esc(html)) + '</div>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
   }
@@ -340,7 +327,7 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     lastResult = text;
     const container = document.getElementById('convMessages');
 
-    // Remove last scanning message if present
+    // Remove last spinner message if present
     const msgs = container.querySelectorAll('.msg.assistant');
     if (msgs.length) {
       const last = msgs[msgs.length - 1];
@@ -351,31 +338,21 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     div.className = 'msg assistant';
     div.innerHTML =
       '<div class="msg-role">Assistant</div>' +
-      '<div class="msg-bubble">' + renderMessageHtml(text) + '</div>';
+      '<div class="msg-bubble">' + renderMd(text) + '</div>';
     container.appendChild(div);
 
-    if (showSave || text.toLowerCase().includes('readme')) {
-      const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:8px;padding:0 0 4px';
-      actions.innerHTML =
-        '<button class="mini-btn" onclick="copyResult()">Copy</button>' +
-        (showSave ? '<button class="mini-btn" onclick="saveReadme()">Save README.md</button>' : '');
-      container.appendChild(actions);
-    } else if (text.trim().startsWith('@startuml') || text.includes('@startuml')) {
-      renderUMLInline(text, container);
-    } else {
-      const actions = document.createElement('div');
-      actions.style.cssText = 'display:flex;gap:8px;padding:0 0 4px';
-      actions.innerHTML = '<button class="mini-btn" onclick="copyResult()">Copy</button>';
-      container.appendChild(actions);
-    }
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;padding:0 0 4px';
+    actions.innerHTML = '<button class="mini-btn" onclick="copyResult()">Copy</button>' +
+      (showSave ? '<button class="mini-btn" onclick="saveReadme()">Save README.md</button>' : '');
+    container.appendChild(actions);
 
     container.scrollTop = container.scrollHeight;
     setRunning(false);
   }
 
   function copyResult() {
-    navigator.clipboard.writeText(lastResult).then(() => {
+    navigator.clipboard.writeText(lastResult).then(function() {
       vscode.postMessage({ command: 'showInfo', text: 'Copied to clipboard.' });
     });
   }
@@ -385,7 +362,7 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     vscode.postMessage({ command: 'writeFile', relativePath: 'README.md', content: lastResult, confirmReplace: true });
   }
 
-  // ── Backend ───────────────────────────────────────────────────────────────
+  // ── Backend bridge ─────────────────────────────────────────────────────────
   function callBackend(endpoint, payload, requestId) {
     vscode.postMessage({ command: 'callBackend', endpoint, payload, requestId });
   }
@@ -393,11 +370,13 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
   function handleBackend(requestId, data, error) {
     if (requestId.startsWith('health_')) {
       _onHealthResolved();
-      const ok = !error && !!data;
+      const ok = !error && data && (data.status === 'ok' || !!data);
       const badge = document.getElementById('statusBadge');
       badge.textContent = ok ? 'Connected' : 'Offline';
-      badge.classList.toggle('on', ok);
-      document.getElementById('statusBar').textContent = ok ? 'Backend connected' : 'Backend offline — ensure API is running on port 18000';
+      badge.classList.toggle('on', !!ok);
+      document.getElementById('statusBar').textContent = ok
+        ? 'Backend connected — ready'
+        : ('Backend offline' + (error ? ': ' + error : '') + ' — ensure the API is running on port 18000');
       return;
     }
 
@@ -407,22 +386,19 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
       return;
     }
 
+    // needs_more_info (architecture/recommendation multi-turn)
+    if (data.needs_more_info) {
+      setRunning(false);
+      appendMsg('assistant', data.question || 'Please provide more information.');
+      return;
+    }
+
     const text = data.result || data.reply || data.response || data.explanation || data.content || JSON.stringify(data, null, 2);
     const isReadme = requestId.startsWith('readme_');
-    const isUml = requestId.startsWith('uml_');
 
-    if (isUml) {
-      const umlMatch = String(text).match(/@startuml[\s\S]*?@enduml/);
-      if (umlMatch) {
-        appendResultWithUml(umlMatch[0]);
-        return;
-      }
-      const imgMatch = String(text).match(/https?:\/\/[^\s)]+\/api\/diagrams\/[^\s)]+/);
-      if (imgMatch) {
-        appendResultWithImg(imgMatch[0], text);
-        return;
-      }
-    }
+    // Check for PlantUML
+    const umlMatch = String(text).match(/@startuml[\s\S]*?@enduml/);
+    if (umlMatch) { appendResultWithUml(umlMatch[0]); return; }
 
     appendResult(typeof text === 'string' ? text : JSON.stringify(text, null, 2), isReadme);
   }
@@ -445,52 +421,22 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     setRunning(false);
   }
 
-  function appendResultWithImg(imgUrl, fullText) {
-    lastResult = fullText;
-    const container = document.getElementById('convMessages');
-    const div = document.createElement('div');
-    div.className = 'msg assistant';
-    div.innerHTML =
-      '<div class="msg-role">Assistant</div>' +
-      '<div class="msg-bubble"><img alt="UML diagram" style="width:100%;display:block;border-radius:6px" src="' + esc(imgUrl) + '"/></div>';
-    container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
-    setRunning(false);
-  }
-
-  function renderUMLInline(code, container) {
-    try {
-      const enc = plantEncode(code);
-      const div = document.createElement('div');
-      div.innerHTML = '<img alt="UML diagram" style="width:100%;display:block;border-radius:6px" src="https://www.plantuml.com/plantuml/svg/' + enc + '"/>';
-      container.appendChild(div);
-    } catch(_) {}
-  }
-
-  // ── Markdown renderer ─────────────────────────────────────────────────────
-  function renderMessageHtml(text) {
+  // ── Markdown renderer ──────────────────────────────────────────────────────
+  function renderMd(text) {
     if (!text) return '';
-    let html = String(text);
-    // fenced code blocks
-    html = html.replace(/\`\`\`(\w*)\n?([\s\S]*?)\`\`\`/g, (_, lang, code) =>
-      '<pre><code>' + esc(code.trim()) + '</code></pre>'
-    );
-    // inline code
-    html = html.replace(/\`([^\`\n]+)\`/g, (_, c) => '<code>' + esc(c) + '</code>');
-    // bold
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    // headers
-    html = html.replace(/^### (.+)$/gm, '<strong style="font-size:12px;display:block;margin-top:8px">$1</strong>');
-    html = html.replace(/^## (.+)$/gm, '<strong style="font-size:13px;display:block;margin-top:10px">$1</strong>');
-    html = html.replace(/^# (.+)$/gm, '<strong style="font-size:14px;display:block;margin-top:12px">$1</strong>');
-    // bullet lists
-    html = html.replace(/^[-*] (.+)$/gm, '<div style="padding-left:14px;margin:2px 0">&#8226; $1</div>');
-    // line breaks
-    html = html.replace(/\n/g, '<br/>');
-    return html;
+    let h = String(text);
+    h = h.replace(/\`\`\`(\w*)\n?([\s\S]*?)\`\`\`/g, function(_,_l,code){ return '<pre><code>' + esc(code.trim()) + '</code></pre>'; });
+    h = h.replace(/\`([^\`\n]+)\`/g, function(_,c){ return '<code>' + esc(c) + '</code>'; });
+    h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    h = h.replace(/^### (.+)$/gm, '<strong style="font-size:12px;display:block;margin-top:8px">$1</strong>');
+    h = h.replace(/^## (.+)$/gm, '<strong style="font-size:13px;display:block;margin-top:10px">$1</strong>');
+    h = h.replace(/^# (.+)$/gm, '<strong style="font-size:14px;display:block;margin-top:12px">$1</strong>');
+    h = h.replace(/^[-*] (.+)$/gm, '<div style="padding-left:14px;margin:2px 0">&#8226; $1</div>');
+    h = h.replace(/\n/g, '<br/>');
+    return h;
   }
 
-  // ── PlantUML encoder ──────────────────────────────────────────────────────
+  // ── PlantUML encoder ───────────────────────────────────────────────────────
   function plantEncode(s) {
     function e6(b) {
       if (b < 10) return String.fromCharCode(48 + b);
@@ -499,44 +445,41 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
       return b === 0 ? '-' : '_';
     }
     function a3(b1, b2, b3) {
-      return e6(b1 >> 2) + e6(((b1 & 3) << 4) | (b2 >> 4)) + e6(((b2 & 0xf) << 2) | (b3 >> 6)) + e6(b3 & 0x3f);
+      return e6(b1>>2)+e6(((b1&3)<<4)|(b2>>4))+e6(((b2&0xf)<<2)|(b3>>6))+e6(b3&0x3f);
     }
     const bytes = new TextEncoder().encode(s);
-    let result = '';
-    for (let i = 0; i < bytes.length; i += 3) {
-      result += a3(bytes[i], bytes[i + 1] || 0, bytes[i + 2] || 0);
-    }
-    return result;
+    let r = '';
+    for (let i = 0; i < bytes.length; i += 3) r += a3(bytes[i], bytes[i+1]||0, bytes[i+2]||0);
+    return r;
   }
 
-  // ── Escape helper ─────────────────────────────────────────────────────────
-  function esc(text) {
-    return String(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  }
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function esc(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-  // ── VSCode message handler ────────────────────────────────────────────────
-  window.addEventListener('message', event => {
+  // ── VS Code message handler ────────────────────────────────────────────────
+  window.addEventListener('message', function(event) {
     const msg = event.data;
     switch (msg.command) {
       case 'activeFileChanged':
-        currentFile = { name: msg.fileName || '', path: msg.filePath || '', language: msg.language || '', content: msg.content || '' };
+        currentFile = { name: msg.fileName||'', path: msg.filePath||'', language: msg.language||'', content: msg.content||'' };
         document.getElementById('fileBadge').textContent = msg.fileName || 'No file open';
         break;
 
       case 'selectionChanged':
         selectedCode = msg.text || '';
         selectedLines = msg.lines || 0;
-        if ((currentService === 'explain' || currentService === 'tests') && selectedCode) {
-          initServiceInput(currentService);
-        }
+        if ((currentService === 'explain' || currentService === 'tests') && selectedCode) initServiceInput(currentService);
         break;
 
       case 'allFilesContent':
         if (pendingReadme) {
           pendingReadme = false;
           const files = msg.files || [];
-          const folderContent = files.map(f => '// FILE: ' + (f.relativePath || f.name || '') + '\n' + (f.content || '')).join('\n\n');
-          const projectName = currentFile.path ? currentFile.path.split(/[/\\]/).slice(-3, -1).join('/') : 'project';
+          const folderContent = files.map(function(f){ return '// FILE: ' + (f.relativePath||f.name||'') + '\n' + (f.content||''); }).join('\n\n');
+          const projectName = currentFile.path
+            ? currentFile.path.replace(/\\\\/g,'/').split('/').slice(-3,-1).join('/')
+            : 'project';
           callBackend('/api/analyze', {
             type: 'readme',
             prompt: 'Generate a README for this project.',
@@ -559,16 +502,16 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
     }
   });
 
-  // ── Health check ──────────────────────────────────────────────────────────
-  function checkHealth() {
-    callBackend('/health', {}, 'health_' + Date.now());
-  }
-
+  // ── Health check ───────────────────────────────────────────────────────────
+  function checkHealth() { callBackend('/health', {}, 'health_' + Date.now()); }
   vscode.postMessage({ command: 'getCurrentFile' });
-  // Retry health check until we get a response (panel may not be visible on first fire)
-  var _healthTimer = setInterval(function() { checkHealth(); }, 3000);
-  function _onHealthResolved() { clearInterval(_healthTimer); }
-  checkHealth();
+  // Delay first check so the message listener is registered before we fire
+  var _healthTimer = null;
+  setTimeout(function() {
+    checkHealth();
+    _healthTimer = setInterval(checkHealth, 3000);
+  }, 500);
+  function _onHealthResolved() { if (_healthTimer) clearInterval(_healthTimer); }
   setInterval(checkHealth, 30000);
 </script>
 </body>
@@ -577,9 +520,7 @@ export function getWebviewContent(webview: vscode.Webview, extensionUri: vscode.
 
 function getNonce() {
   let text = '';
-  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += characters.charAt(Math.floor(Math.random() * characters.length));
-  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) text += chars.charAt(Math.floor(Math.random() * chars.length));
   return text;
 }

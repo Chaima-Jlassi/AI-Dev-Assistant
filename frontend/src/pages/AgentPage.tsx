@@ -839,6 +839,35 @@ const AgentPage = () => {
                         },
                         a: ({ href, children }) => {
                           const resolvedHref = resolveMediaUrl(href) ?? href ?? "#";
+                          const isDiagramUrl = resolvedHref?.includes("/api/diagrams/");
+                          const handleDownload = async (e: React.MouseEvent) => {
+                            e.preventDefault();
+                            if (!resolvedHref) return;
+                            try {
+                              const response = await fetch(resolvedHref);
+                              const blob = await response.blob();
+                              const filename = resolvedHref.split("/").pop() || "diagram";
+                              const a = document.createElement("a");
+                              a.href = URL.createObjectURL(blob);
+                              a.download = filename;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(a.href);
+                            } catch (err) {
+                              console.error("Download failed:", err);
+                            }
+                          };
+                          if (isDiagramUrl && String(children).includes("📥")) {
+                            return (
+                              <button
+                                onClick={handleDownload}
+                                className="inline-flex items-center gap-1 underline underline-offset-2 hover:opacity-80"
+                              >
+                                {children}
+                              </button>
+                            );
+                          }
                           return (
                             <a href={resolvedHref} target="_blank" rel="noreferrer" className="underline underline-offset-2">
                               {children}

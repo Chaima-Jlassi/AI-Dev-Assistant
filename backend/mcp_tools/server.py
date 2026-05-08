@@ -124,7 +124,29 @@ def generate_uml_diagram(description: str, diagram_type: str = "auto", count: in
         diagrams: List[Dict[str, Any]] = []
         for idx, uml_code in enumerate(uml_blocks[:count], start=1):
             output_name = f"mcp_diagram_{idx}_{int(time.time() * 1000)}.png"
-            saved_path = renderer.render(uml_code, output_name)
+            # Try rendering with retries to handle intermittent PlantUML server/network issues
+            saved_path = None
+            for attempt in range(1, 4):
+                try:
+                    saved_path = renderer.render(uml_code, output_name)
+                    break
+                except Exception as render_exc:
+                    logger.warning(f"Render attempt {attempt}/3 failed: {render_exc}")
+                    if attempt < 3:
+                        time.sleep(1.5 * attempt)
+            if not saved_path:
+                # Rendering failed — save raw PlantUML source as a fallback (.puml) so callers
+                # can still view or render it manually.
+                from pathlib import Path as _P
+                puml_name = output_name.rsplit('.', 1)[0] + '.puml'
+                puml_path = _P(CONFIG.outputs.diagrams_dir) / puml_name
+                try:
+                    puml_path.write_text(uml_code, encoding='utf-8')
+                    saved_path = str(puml_path)
+                    logger.info(f"Saved fallback PUML source: {saved_path}")
+                except Exception as e:
+                    logger.error(f"Failed to save fallback PUML source: {e}")
+                    raise RuntimeError(f"Rendering failed and fallback save failed: {e}")
             diagrams.append({
                 "index": idx,
                 "diagram_type": diagram_type,
